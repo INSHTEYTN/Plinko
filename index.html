@@ -1,1 +1,3543 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-visual">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#070B10">
+  <title>Plinko VIP — NVR</title>
 
+  <!-- Telegram WebApp SDK -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <!-- GSAP 3 для плавных UI-анимаций и счётчиков -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <!-- Canvas Confetti для джекпотов и наград -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+  <!-- Firebase Realtime Database (Compat SDK) для реального онлайна -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+
+  <style>
+    /* ==========================================================================
+       1. DESIGN TOKENS & GLOBAL RESET (NO BROWSER GARBAGE)
+       ========================================================================== */
+    :root {
+      --bg-obsidian: #070B10;
+      --bg-emerald: #0D1815;
+      --glass-bg: rgba(13, 22, 26, 0.72);
+      --glass-bg-strong: rgba(10, 17, 22, 0.88);
+      --glass-border: rgba(245, 197, 66, 0.16);
+      --glass-border-light: rgba(255, 255, 255, 0.08);
+
+      --gold-1: #FCE38A;
+      --gold-2: #F5C542;
+      --gold-3: #D4AF37;
+      --gold-4: #9E7B1B;
+
+      --emerald-glow: #10B981;
+      --emerald-bright: #34D399;
+      --ruby-glow: #F43F5E;
+      --text-main: #F8FAFC;
+      --text-muted: #94A3B8;
+      --text-dim: #64748B;
+
+      --sat: env(safe-area-inset-top, 0px);
+      --sab: env(safe-area-inset-bottom, 0px);
+      --tg-sat: 0px;
+      --tg-sab: 0px;
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    /* Скрытие системных скроллбаров */
+    * {
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+    *::-webkit-scrollbar {
+      display: none;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100dvh;
+      overflow: hidden;
+      overscroll-behavior: none;
+      touch-action: none;
+      background-color: var(--bg-obsidian);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    /* Убираем стандартные стрелки и обводки инпутов */
+    input[type="number"]::-webkit-outer-spin-button,
+    input[type="number"]::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    input[type="number"] {
+      -moz-appearance: textfield;
+      appearance: textfield;
+    }
+    button, input {
+      font-family: inherit;
+      outline: none;
+      border: none;
+      background: none;
+      color: inherit;
+    }
+    input {
+      user-select: text;
+      -webkit-user-select: text;
+    }
+
+    .tabular {
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ==========================================================================
+       2. APP SHELL (STRICT PORTRAIT MOBILE / CENTERED CABINET ON DESKTOP)
+       ========================================================================== */
+    #app-shell {
+      position: relative;
+      width: 100%;
+      max-width: 460px;
+      height: 100dvh;
+      background:
+        radial-gradient(ellipse 90% 55% at 50% 42%, rgba(16, 185, 129, 0.13) 0%, rgba(13, 24, 21, 0.55) 45%, rgba(7, 11, 16, 1) 100%),
+        linear-gradient(180deg, #070B10 0%, #0D1815 52%, #070B10 100%);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 0 60px rgba(0, 0, 0, 0.9);
+    }
+
+    @media (min-width: 500px) and (min-height: 600px) {
+      #app-shell {
+        height: min(100dvh, 920px);
+        border-radius: 26px;
+        border: 1px solid rgba(245, 197, 66, 0.18);
+      }
+    }
+
+    /* Вспышка по краям экрана при джекпоте */
+    #jackpot-vignette {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 40;
+      opacity: 0;
+      box-shadow: inset 0 0 80px 18px rgba(245, 197, 66, 0.65);
+    }
+
+    /* ==========================================================================
+       3. PRELOADER (SPLASH SCREEN)
+       ========================================================================== */
+    #splash-screen {
+      position: absolute;
+      inset: 0;
+      z-index: 999;
+      background: radial-gradient(circle at 50% 45%, #11221E 0%, #070B10 75%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+    }
+
+    .splash-logo-wrap {
+      position: relative;
+      width: 78px;
+      height: 78px;
+      border-radius: 24px;
+      background: linear-gradient(135deg, rgba(245, 197, 66, 0.22), rgba(16, 185, 129, 0.1));
+      border: 1.5px solid rgba(245, 197, 66, 0.55);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 36px rgba(245, 197, 66, 0.28);
+    }
+
+    .splash-title {
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: 3px;
+      background: linear-gradient(180deg, #FFF3C4 0%, #F5C542 55%, #B8860B 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      text-transform: uppercase;
+    }
+
+    .splash-sub {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 5px;
+      color: rgba(245, 197, 66, 0.65);
+      text-transform: uppercase;
+    }
+
+    .splash-bar {
+      width: 120px;
+      height: 3px;
+      border-radius: 99px;
+      background: rgba(255, 255, 255, 0.08);
+      overflow: hidden;
+      margin-top: 6px;
+    }
+
+    .splash-bar-fill {
+      width: 0%;
+      height: 100%;
+      background: linear-gradient(90deg, var(--gold-3), var(--gold-1));
+      border-radius: 99px;
+    }
+
+    /* ==========================================================================
+       4. HEADER (~52px + SAFE AREA TOP + ~20PX ADAPTIVE SPACING)
+       ========================================================================== */
+    .app-header {
+      flex: 0 0 auto;
+      padding: calc(max(var(--sat), var(--tg-sat)) + clamp(18px, 2.8dvh, 24px)) 12px 6px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      z-index: 20;
+    }
+
+    .profile-pill {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-width: 0;
+      max-width: 34%;
+    }
+
+    .avatar-ring {
+      position: relative;
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      padding: 1.5px;
+      background: linear-gradient(135deg, var(--gold-1), var(--gold-4));
+      flex-shrink: 0;
+      box-shadow: 0 2px 10px rgba(245, 197, 66, 0.25);
+    }
+
+    .avatar-img, .avatar-initials {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      object-fit: cover;
+      background: #101D24;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 800;
+      color: var(--gold-1);
+    }
+
+    .profile-name {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-main);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 1.2;
+    }
+
+    .profile-vip {
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.8px;
+      color: var(--gold-2);
+      text-transform: uppercase;
+      opacity: 0.9;
+    }
+
+    /* Баланс и кнопка +20K */
+    .balance-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex: 1 1 auto;
+      justify-content: center;
+      min-width: 0;
+    }
+
+    .balance-pill {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      max-width: 100%;
+    }
+
+    .balance-dollar {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--gold-1), var(--gold-3));
+      color: #070B10;
+      font-size: 11px;
+      font-weight: 900;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    #balance-display {
+      font-size: 14px;
+      font-weight: 800;
+      color: #FFFFFF;
+      letter-spacing: -0.2px;
+      white-space: nowrap;
+    }
+
+    /* Условная кнопка бонуса +20K (строго при balance < 5000) */
+    #bonus-btn {
+      display: none;
+      align-items: center;
+      gap: 3px;
+      padding: 5px 8px;
+      border-radius: 999px;
+      background: linear-gradient(135deg, #10B981 0%, #D4AF37 100%);
+      color: #04100C;
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: 0.2px;
+      cursor: pointer;
+      flex-shrink: 0;
+      box-shadow: 0 0 14px rgba(16, 185, 129, 0.55);
+      animation: bonusPulse 1.6s infinite ease-in-out;
+    }
+    #bonus-btn.visible {
+      display: inline-flex;
+    }
+    #bonus-btn:active {
+      transform: scale(0.92);
+    }
+
+    @keyframes bonusPulse {
+      0%, 100% { box-shadow: 0 0 10px rgba(16, 185, 129, 0.45); transform: scale(1); }
+      50% { box-shadow: 0 0 18px rgba(245, 197, 66, 0.75); transform: scale(1.04); }
+    }
+
+    /* Кнопки действий в шапке */
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .icon-btn {
+      position: relative;
+      width: 34px;
+      height: 34px;
+      border-radius: 11px;
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border-light);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-main);
+      cursor: pointer;
+      transition: transform 0.12s ease, border-color 0.2s ease;
+    }
+    .icon-btn:active {
+      transform: scale(0.9);
+    }
+    .icon-btn.has-alert {
+      border-color: rgba(245, 197, 66, 0.55);
+    }
+
+    .quest-badge {
+      position: absolute;
+      top: -4px;
+      right: -4px;
+      min-width: 16px;
+      height: 16px;
+      padding: 0 4px;
+      border-radius: 99px;
+      background: linear-gradient(135deg, #F43F5E, #F59E0B);
+      color: #FFF;
+      font-size: 9px;
+      font-weight: 900;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 6px rgba(244, 63, 94, 0.6);
+    }
+    .quest-badge.visible {
+      display: flex;
+    }
+
+    /* ==========================================================================
+       5. HISTORY STRIP (~28px)
+       ========================================================================== */
+    .history-bar {
+      flex: 0 0 28px;
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      overflow: hidden;
+      z-index: 15;
+    }
+
+    .history-label {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.7px;
+      flex-shrink: 0;
+    }
+
+    #history-chips {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    .hist-chip {
+      padding: 2px 7px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 800;
+      line-height: 1.3;
+      flex-shrink: 0;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    /* ==========================================================================
+       6. GAME BOARD CANVAS (FLEXIBLE CENTRAL AREA)
+       ========================================================================== */
+    #board-container {
+      position: relative;
+      flex: 1 1 auto;
+      min-height: 210px;
+      width: 100%;
+      overflow: hidden;
+    }
+
+    #plinko-canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* ==========================================================================
+       7. CONTROLS PANEL (~195px, COMPACT GLASSMORPHISM)
+       ========================================================================== */
+    .controls-panel {
+      flex: 0 0 auto;
+      margin: 0 10px 4px 10px;
+      padding: 9px 10px 10px 10px;
+      border-radius: 18px;
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      z-index: 20;
+      box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.35);
+    }
+
+    /* Строка риска + фри-ставка */
+    .ctrl-top-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+    }
+
+    .risk-segmented {
+      display: flex;
+      flex: 1;
+      background: rgba(5, 9, 13, 0.75);
+      border-radius: 10px;
+      padding: 2px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .risk-btn {
+      flex: 1;
+      padding: 5px 4px;
+      border-radius: 8px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.18s ease;
+      text-align: center;
+    }
+    .risk-btn.active {
+      background: linear-gradient(180deg, rgba(245, 197, 66, 0.22), rgba(212, 175, 55, 0.12));
+      color: var(--gold-1);
+      box-shadow: inset 0 0 0 1px rgba(245, 197, 66, 0.45);
+    }
+
+    /* Переключатель фри-ставки */
+    #freebet-toggle {
+      display: none;
+      align-items: center;
+      gap: 4px;
+      padding: 5px 8px;
+      border-radius: 10px;
+      background: rgba(245, 197, 66, 0.12);
+      border: 1px solid rgba(245, 197, 66, 0.4);
+      color: var(--gold-1);
+      font-size: 11px;
+      font-weight: 800;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+      transition: all 0.15s ease;
+    }
+    #freebet-toggle.visible {
+      display: inline-flex;
+    }
+    #freebet-toggle.active {
+      background: linear-gradient(135deg, #FCE38A 0%, #D4AF37 100%);
+      color: #070B10;
+      box-shadow: 0 0 14px rgba(245, 197, 66, 0.5);
+    }
+
+    /* Строка ставки */
+    .bet-row {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      transition: opacity 0.2s ease;
+    }
+    .bet-row.disabled {
+      opacity: 0.42;
+      pointer-events: none;
+    }
+
+    .bet-input-wrap {
+      flex: 1 1 auto;
+      display: flex;
+      align-items: center;
+      background: rgba(5, 9, 13, 0.8);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      padding: 0 9px;
+      height: 34px;
+      min-width: 0;
+      transition: border-color 0.2s ease;
+    }
+    .bet-input-wrap:focus-within {
+      border-color: rgba(245, 197, 66, 0.65);
+    }
+
+    .bet-currency {
+      color: var(--gold-2);
+      font-weight: 800;
+      font-size: 13px;
+      margin-right: 4px;
+    }
+
+    #bet-input {
+      width: 100%;
+      font-size: 16px;
+      line-height: 1;
+      font-weight: 800;
+      color: #FFFFFF;
+      min-width: 0;
+      touch-action: manipulation;
+    }
+
+    .bet-per-label {
+      font-size: 9px;
+      color: var(--text-dim);
+      font-weight: 600;
+      white-space: nowrap;
+      margin-left: 4px;
+    }
+
+    .quick-bet-btn {
+      height: 34px;
+      padding: 0 8px;
+      border-radius: 9px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: var(--text-main);
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: transform 0.1s ease, background 0.15s ease;
+    }
+    .quick-bet-btn:active {
+      transform: scale(0.92);
+      background: rgba(245, 197, 66, 0.2);
+    }
+
+    /* Строка количества шариков */
+    .balls-row {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .balls-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+    }
+
+    .balls-slider-wrap {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex: 1;
+    }
+
+    .step-btn {
+      width: 24px;
+      height: 24px;
+      border-radius: 7px;
+      background: rgba(255, 255, 255, 0.07);
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      color: var(--text-main);
+      font-size: 14px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .step-btn:active { transform: scale(0.9); }
+
+    #balls-slider {
+      flex: 1;
+      -webkit-appearance: none;
+      appearance: none;
+      height: 5px;
+      border-radius: 99px;
+      background: rgba(255, 255, 255, 0.12);
+      outline: none;
+    }
+    #balls-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--gold-1), var(--gold-3));
+      border: 2px solid #070B10;
+      box-shadow: 0 0 10px rgba(245, 197, 66, 0.65);
+      cursor: pointer;
+    }
+
+    .balls-count-badge {
+      font-size: 11px;
+      font-weight: 800;
+      color: var(--gold-1);
+      min-width: 56px;
+      text-align: right;
+    }
+
+    .balls-presets {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .preset-chip {
+      flex: 1;
+      height: 22px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      color: var(--text-muted);
+      font-size: 10px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .preset-chip.active {
+      background: rgba(245, 197, 66, 0.18);
+      border-color: rgba(245, 197, 66, 0.5);
+      color: var(--gold-1);
+    }
+
+    /* Главная золотая кнопка запуска */
+    #drop-btn {
+      width: 100%;
+      height: 44px;
+      border-radius: 13px;
+      background: linear-gradient(180deg, #FCE38A 0%, #F5C542 45%, #C9971A 100%);
+      color: #070B10;
+      font-size: 14px;
+      font-weight: 900;
+      letter-spacing: 0.4px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      box-shadow:
+        0 4px 18px rgba(245, 197, 66, 0.35),
+        inset 0 1px 1px rgba(255, 255, 255, 0.7);
+      transition: transform 0.1s ease, filter 0.15s ease;
+    }
+    #drop-btn:active {
+      transform: scale(0.975);
+      filter: brightness(0.95);
+    }
+    #drop-btn.free-mode {
+      background: linear-gradient(135deg, #34D399 0%, #F5C542 50%, #FCE38A 100%);
+      box-shadow: 0 4px 22px rgba(52, 211, 153, 0.45);
+    }
+    #drop-btn.insufficient {
+      background: linear-gradient(180deg, #334155 0%, #1E293B 100%);
+      color: #94A3B8;
+      box-shadow: none;
+    }
+
+    .drop-sub {
+      font-size: 11px;
+      font-weight: 800;
+      opacity: 0.85;
+      padding: 2px 6px;
+      border-radius: 6px;
+      background: rgba(7, 11, 16, 0.14);
+    }
+
+    /* ==========================================================================
+       8. FOOTER BAR (~26px + SAFE AREA BOTTOM)
+       ========================================================================== */
+    .app-footer {
+      flex: 0 0 auto;
+      padding: 2px 14px calc(max(var(--sab), var(--tg-sab)) + 6px) 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      z-index: 20;
+    }
+
+    #online-trigger {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 3px 8px 3px 6px;
+      border-radius: 99px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    #online-trigger:active {
+      transform: scale(0.95);
+    }
+
+    .online-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--emerald-glow);
+      box-shadow: 0 0 8px var(--emerald-glow);
+      animation: dotPulse 2s infinite;
+    }
+    .online-dot.offline {
+      background: #64748B;
+      box-shadow: none;
+      animation: none;
+    }
+
+    @keyframes dotPulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.85); }
+    }
+
+    .dev-badge {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      color: rgba(245, 197, 66, 0.45);
+      text-transform: uppercase;
+      padding: 2px 7px;
+      border-radius: 6px;
+      background: rgba(245, 197, 66, 0.05);
+      border: 1px solid rgba(245, 197, 66, 0.1);
+    }
+
+    /* ==========================================================================
+       9. TOAST NOTIFICATIONS
+       ========================================================================== */
+    #toast-container {
+      position: absolute;
+      top: calc(max(var(--sat), var(--tg-sat)) + 84px);
+      left: 12px;
+      right: 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      pointer-events: none;
+      z-index: 120;
+    }
+
+    .toast-item {
+      padding: 9px 14px;
+      border-radius: 12px;
+      background: rgba(11, 20, 24, 0.94);
+      border: 1px solid rgba(245, 197, 66, 0.45);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      color: var(--text-main);
+      font-size: 12px;
+      font-weight: 700;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      max-width: 100%;
+    }
+
+    /* ==========================================================================
+       10. BOTTOM-SHEET MODALS (QUESTS & ONLINE PLAYERS)
+       ========================================================================== */
+    .modal-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(3, 6, 10, 0.74);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      z-index: 100;
+      display: none;
+      align-items: flex-end;
+      justify-content: center;
+      opacity: 0;
+    }
+    .modal-backdrop.open {
+      display: flex;
+    }
+
+    .bottom-sheet {
+      width: 100%;
+      max-height: 82dvh;
+      background: linear-gradient(180deg, #0E1A1E 0%, #070C10 100%);
+      border-top: 1px solid rgba(245, 197, 66, 0.28);
+      border-radius: 22px 22px 0 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      padding-bottom: calc(max(var(--sab), var(--tg-sab)) + 12px);
+      transform: translateY(100%);
+    }
+
+    .sheet-handle {
+      width: 38px;
+      height: 4px;
+      border-radius: 99px;
+      background: rgba(255, 255, 255, 0.2);
+      margin: 10px auto 6px auto;
+      flex-shrink: 0;
+    }
+
+    .sheet-header {
+      padding: 4px 16px 12px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+      flex-shrink: 0;
+    }
+
+    .sheet-title {
+      font-size: 16px;
+      font-weight: 800;
+      color: var(--gold-1);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .sheet-close {
+      width: 30px;
+      height: 30px;
+      border-radius: 99px;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+
+    /* Прокручиваемый список внутри модалок */
+    .scrollable-list {
+      flex: 1 1 auto;
+      overflow-y: auto;
+      touch-action: pan-y;
+      overscroll-behavior: contain;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    /* Карточка задания */
+    .quest-card {
+      padding: 12px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.035);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .quest-card.ready {
+      border-color: rgba(245, 197, 66, 0.55);
+      background: rgba(245, 197, 66, 0.07);
+    }
+    .quest-card.claimed {
+      opacity: 0.55;
+    }
+
+    .quest-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .quest-name {
+      font-size: 13px;
+      font-weight: 800;
+      color: #FFFFFF;
+    }
+    .quest-desc {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .quest-reward-tag {
+      padding: 4px 8px;
+      border-radius: 8px;
+      background: rgba(245, 197, 66, 0.14);
+      border: 1px solid rgba(245, 197, 66, 0.3);
+      color: var(--gold-1);
+      font-size: 11px;
+      font-weight: 800;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .quest-progress-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .quest-bar-bg {
+      flex: 1;
+      height: 7px;
+      border-radius: 99px;
+      background: rgba(255, 255, 255, 0.08);
+      overflow: hidden;
+    }
+
+    .quest-bar-fill {
+      height: 100%;
+      border-radius: 99px;
+      background: linear-gradient(90deg, var(--emerald-glow), var(--gold-2));
+      transition: width 0.3s ease;
+    }
+
+    .quest-pct {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-muted);
+      min-width: 78px;
+      text-align: right;
+    }
+
+    .quest-claim-btn {
+      width: 100%;
+      padding: 8px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, var(--gold-1), var(--gold-3));
+      color: #070B10;
+      font-size: 12px;
+      font-weight: 900;
+      cursor: pointer;
+      box-shadow: 0 4px 14px rgba(245, 197, 66, 0.3);
+    }
+    .quest-claim-btn:active { transform: scale(0.97); }
+
+    .quest-status-pill {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--emerald-bright);
+      text-align: right;
+    }
+
+    /* Вкладки онлайн-модалки */
+    .modal-tabs {
+      display: flex;
+      gap: 6px;
+      padding: 10px 14px 0 14px;
+      flex-shrink: 0;
+    }
+    .modal-tab {
+      flex: 1;
+      padding: 7px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .modal-tab.active {
+      background: rgba(245, 197, 66, 0.16);
+      color: var(--gold-1);
+      border: 1px solid rgba(245, 197, 66, 0.4);
+    }
+
+    /* Карточка онлайн-игрока */
+    .player-card {
+      padding: 10px 12px;
+      border-radius: 13px;
+      background: rgba(255, 255, 255, 0.035);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .player-avatar-wrap {
+      position: relative;
+      width: 38px;
+      height: 38px;
+      flex-shrink: 0;
+    }
+    .player-online-indicator {
+      position: absolute;
+      bottom: 0;
+      right: 0;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--emerald-glow);
+      border: 2px solid #0B1418;
+    }
+
+    .player-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .player-name {
+      font-size: 13px;
+      font-weight: 800;
+      color: #FFF;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .player-meta {
+      font-size: 10px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .player-stats {
+      text-align: right;
+      flex-shrink: 0;
+    }
+    .player-profit {
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .player-profit.pos { color: var(--emerald-bright); }
+    .player-profit.neg { color: var(--ruby-glow); }
+    .player-last {
+      font-size: 10px;
+      color: var(--gold-2);
+      margin-top: 2px;
+    }
+
+    .empty-state {
+      padding: 28px 16px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    /* Инвентарь билетов внутри окна заданий */
+    .tickets-summary {
+      padding: 10px 14px;
+      margin: 10px 14px 0 14px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, rgba(245, 197, 66, 0.14), rgba(16, 185, 129, 0.08));
+      border: 1px solid rgba(245, 197, 66, 0.35);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--gold-1);
+      flex-shrink: 0;
+    }
+
+    /* Заглушка при горизонтальной ориентации на мобильных */
+    #landscape-lock {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 2000;
+      background: #070B10;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      text-align: center;
+      padding: 24px;
+    }
+
+    @media (orientation: landscape) and (max-height: 500px) {
+      #landscape-lock {
+        display: flex;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Заглушка для горизонтальной ориентации смартфона -->
+  <div id="landscape-lock">
+    <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#F5C542" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="6" y="2" width="12" height="20" rx="2" ry="2"></rect>
+      <line x1="12" y1="18" x2="12.01" y2="18"></line>
+    </svg>
+    <div style="font-size:16px;font-weight:800;color:#FCE38A;">Переверните устройство</div>
+    <div style="font-size:12px;color:#94A3B8;max-width:260px;">Plinko VIP разработан для вертикального полноэкранного режима</div>
+  </div>
+
+  <!-- Основной контейнер приложения -->
+  <div id="app-shell">
+    <!-- Вспышка джекпота по краям -->
+    <div id="jackpot-vignette"></div>
+
+    <!-- Прелоадер (Splash Screen) -->
+    <div id="splash-screen">
+      <div class="splash-logo-wrap">
+        <svg width="42" height="42" viewBox="0 0 36 36" fill="none">
+          <circle cx="18" cy="7" r="3.5" fill="#FCE38A"/>
+          <circle cx="12" cy="16" r="2.8" fill="#F5C542" opacity="0.9"/>
+          <circle cx="24" cy="16" r="2.8" fill="#F5C542" opacity="0.9"/>
+          <circle cx="8" cy="25" r="2.5" fill="#10B981"/>
+          <circle cx="18" cy="25" r="2.5" fill="#F5C542"/>
+          <circle cx="28" cy="25" r="2.5" fill="#10B981"/>
+        </svg>
+      </div>
+      <div class="splash-title">PLINKO VIP</div>
+      <div class="splash-sub">NVR</div>
+      <div class="splash-bar"><div class="splash-bar-fill" id="splash-fill"></div></div>
+    </div>
+
+    <!-- Тосты уведомлений -->
+    <div id="toast-container"></div>
+
+    <!-- 1. HEADER -->
+    <header class="app-header">
+      <div class="profile-pill">
+        <div class="avatar-ring" id="user-avatar-wrap">
+          <div class="avatar-initials" id="user-avatar-fallback">Г</div>
+        </div>
+        <div style="min-width:0;">
+          <div class="profile-name" id="user-name">Гость</div>
+          <div class="profile-vip">VIP CLUB</div>
+        </div>
+      </div>
+
+      <div class="balance-group">
+        <div class="balance-pill">
+          <div class="balance-dollar">$</div>
+          <span id="balance-display" class="tabular">10,000</span>
+        </div>
+        <button id="bonus-btn" type="button" aria-label="Получить бонус 20000">
+          <span>+20K</span>
+        </button>
+      </div>
+
+      <div class="header-actions">
+        <button class="icon-btn" id="quests-btn" type="button" aria-label="Задания">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path>
+            <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path>
+            <path d="M4 22h16"></path>
+            <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"></path>
+            <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"></path>
+            <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"></path>
+          </svg>
+          <span class="quest-badge" id="quest-badge">0</span>
+        </button>
+
+        <button class="icon-btn" id="sound-btn" type="button" aria-label="Звук">
+          <svg id="sound-icon-svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+            <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+            <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- 2. HISTORY STRIP -->
+    <div class="history-bar">
+      <span class="history-label">Хиты</span>
+      <div id="history-chips"></div>
+    </div>
+
+    <!-- 3. PLINKO BOARD CANVAS -->
+    <main id="board-container">
+      <canvas id="plinko-canvas"></canvas>
+    </main>
+
+    <!-- 4. CONTROLS PANEL -->
+    <section class="controls-panel">
+      <!-- Риск + Фри-ставка -->
+      <div class="ctrl-top-row">
+        <div class="risk-segmented" id="risk-segmented">
+          <button type="button" class="risk-btn" data-risk="low">Низкий</button>
+          <button type="button" class="risk-btn active" data-risk="medium">Средний</button>
+          <button type="button" class="risk-btn" data-risk="high">Высокий</button>
+        </div>
+
+        <button type="button" id="freebet-toggle">
+          <span>🎟️</span>
+          <span id="freebet-label">$30K × 0</span>
+        </button>
+      </div>
+
+      <!-- Ставка ($5 - безлимит) -->
+      <div class="bet-row" id="bet-row">
+        <div class="bet-input-wrap" id="bet-input-wrap">
+          <span class="bet-currency">$</span>
+          <input type="number" id="bet-input" class="tabular" min="5" step="5" value="100" inputmode="numeric">
+          <span class="bet-per-label">/ шар</span>
+        </div>
+        <button type="button" class="quick-bet-btn" data-bet-act="min">Min</button>
+        <button type="button" class="quick-bet-btn" data-bet-act="half">½</button>
+        <button type="button" class="quick-bet-btn" data-bet-act="double">2×</button>
+        <button type="button" class="quick-bet-btn" data-bet-act="max">Max</button>
+      </div>
+
+      <!-- Количество шариков (1 - 100) -->
+      <div class="balls-row">
+        <div class="balls-header">
+          <div class="balls-slider-wrap">
+            <button type="button" class="step-btn" id="balls-minus">−</button>
+            <input type="range" id="balls-slider" min="1" max="100" value="1">
+            <button type="button" class="step-btn" id="balls-plus">+</button>
+          </div>
+          <div class="balls-count-badge tabular" id="balls-count-label">1 шар</div>
+        </div>
+        <div class="balls-presets" id="balls-presets">
+          <button type="button" class="preset-chip active" data-balls="1">1</button>
+          <button type="button" class="preset-chip" data-balls="5">5</button>
+          <button type="button" class="preset-chip" data-balls="10">10</button>
+          <button type="button" class="preset-chip" data-balls="25">25</button>
+          <button type="button" class="preset-chip" data-balls="50">50</button>
+          <button type="button" class="preset-chip" data-balls="100">100</button>
+        </div>
+      </div>
+
+      <!-- Кнопка запуска -->
+      <button type="button" id="drop-btn">
+        <span id="drop-btn-title">СБРОСИТЬ</span>
+        <span class="drop-sub tabular" id="drop-btn-total">$100</span>
+      </button>
+    </section>
+
+    <!-- 5. FOOTER -->
+    <footer class="app-footer">
+      <button type="button" id="online-trigger">
+        <span class="online-dot" id="online-dot"></span>
+        <span id="online-count-text" class="tabular">Онлайн: 0</span>
+      </button>
+      <div class="dev-badge">Dev: NVR</div>
+    </footer>
+
+    <!-- МОДАЛКА ЗАДАНИЙ (BOTTOM SHEET) -->
+    <div class="modal-backdrop" id="quests-modal">
+      <div class="bottom-sheet" id="quests-sheet">
+        <div class="sheet-handle"></div>
+        <div class="sheet-header">
+          <div class="sheet-title">
+            <span>🏆</span>
+            <span>VIP Задания</span>
+          </div>
+          <button type="button" class="sheet-close" data-close-modal="quests-modal">✕</button>
+        </div>
+        <div class="tickets-summary" id="quests-tickets-bar" style="display:none;">
+          <span>🎟️ Ваши фри-ставки:</span>
+          <span id="quests-tickets-list" class="tabular"></span>
+        </div>
+        <div class="scrollable-list" id="quests-list"></div>
+      </div>
+    </div>
+
+    <!-- МОДАЛКА ОНЛАЙН-ИГРОКОВ (BOTTOM SHEET) -->
+    <div class="modal-backdrop" id="online-modal">
+      <div class="bottom-sheet" id="online-sheet">
+        <div class="sheet-handle"></div>
+        <div class="sheet-header">
+          <div class="sheet-title">
+            <span class="online-dot"></span>
+            <span>Реальные игроки</span>
+          </div>
+          <button type="button" class="sheet-close" data-close-modal="online-modal">✕</button>
+        </div>
+        <div class="modal-tabs" id="online-tabs">
+          <button type="button" class="modal-tab active" data-otab="online">Сейчас в игре</button>
+          <button type="button" class="modal-tab" data-otab="all">Все игроки</button>
+        </div>
+        <div class="scrollable-list" id="online-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    'use strict';
+
+    /* ==========================================================================
+       КОНФИГУРАЦИЯ FIREBASE REALTIME DATABASE (РЕАЛЬНЫЙ ОНЛАЙН БЕЗ БОТОВ)
+       Вставьте ваши ключи из Firebase Console -> Project Settings -> Web App.
+       Если оставить поля пустыми, игра будет работать автономно и показывать
+       честный статус онлайна без какой-либо имитации ботов.
+       ========================================================================== */
+    const FIREBASE_CONFIG = {
+      apiKey: "",
+      authDomain: "",
+      databaseURL: "",
+      projectId: "",
+      storageBucket: "",
+      messagingSenderId: "",
+      appId: ""
+    };
+
+    /* ==========================================================================
+       1. TELEGRAM WEBAPP INTEGRATION & GESTURE LOCK
+       ========================================================================== */
+    const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+    const tgUser = tg && tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.id
+      ? tg.initDataUnsafe.user
+      : null;
+
+    function initTelegram() {
+      if (!tg) return;
+      try {
+        tg.ready();
+        tg.expand();
+        if (typeof tg.disableVerticalSwipes === 'function') tg.disableVerticalSwipes();
+        if (typeof tg.requestFullscreen === 'function') {
+          try { tg.requestFullscreen(); } catch (_) {}
+        }
+        if (typeof tg.setHeaderColor === 'function') tg.setHeaderColor('#070B10');
+        if (typeof tg.setBackgroundColor === 'function') tg.setBackgroundColor('#070B10');
+
+        const updateSafeInsets = () => {
+          const topInset = (tg.contentSafeAreaInset && tg.contentSafeAreaInset.top) ||
+                           (tg.safeAreaInset && tg.safeAreaInset.top) || 0;
+          const bottomInset = (tg.contentSafeAreaInset && tg.contentSafeAreaInset.bottom) ||
+                              (tg.safeAreaInset && tg.safeAreaInset.bottom) || 0;
+          document.documentElement.style.setProperty('--tg-sat', topInset + 'px');
+          document.documentElement.style.setProperty('--tg-sab', bottomInset + 'px');
+        };
+        updateSafeInsets();
+        if (typeof tg.onEvent === 'function') {
+          tg.onEvent('safeAreaChanged', updateSafeInsets);
+          tg.onEvent('contentSafeAreaChanged', updateSafeInsets);
+        }
+      } catch (err) {
+        console.warn('Telegram WebApp init warning:', err);
+      }
+    }
+
+    const Haptic = {
+      light() {
+        try { tg?.HapticFeedback?.impactOccurred('light'); } catch (_) {}
+      },
+      medium() {
+        try { tg?.HapticFeedback?.impactOccurred('medium'); } catch (_) {}
+      },
+      success() {
+        try { tg?.HapticFeedback?.notificationOccurred('success'); } catch (_) {}
+      }
+    };
+
+    /* Блокировка зума, контекстного меню и системных жестов */
+    function lockBrowserGestures() {
+      document.addEventListener('contextmenu', e => e.preventDefault(), { passive: false });
+      document.addEventListener('gesturestart', e => e.preventDefault(), { passive: false });
+      document.addEventListener('gesturechange', e => e.preventDefault(), { passive: false });
+
+      let lastTouchEnd = 0;
+      document.addEventListener('touchend', e => {
+        const now = Date.now();
+        if (now - lastTouchEnd <= 280) {
+          if (!e.target.closest('input') && !e.target.closest('button')) {
+            e.preventDefault();
+          }
+        }
+        lastTouchEnd = now;
+      }, { passive: false });
+
+      document.addEventListener('touchmove', e => {
+        if (e.touches.length > 1) {
+          e.preventDefault();
+          return;
+        }
+        if (!e.target.closest('.scrollable-list') && e.target.id !== 'balls-slider') {
+          e.preventDefault();
+        }
+      }, { passive: false });
+    }
+
+    /* ==========================================================================
+       2. FORMATTING UTILITIES
+       ========================================================================== */
+    function formatMoney(val) {
+      const n = Math.floor(Number(val) || 0);
+      return n.toLocaleString('en-US');
+    }
+
+    function formatCompact(val) {
+      const n = Number(val) || 0;
+      if (n >= 1e9) return (n / 1e9).toFixed(2).replace(/\.00$/, '') + 'B';
+      if (n >= 1e6) return (n / 1e6).toFixed(2).replace(/\.00$/, '') + 'M';
+      if (n >= 1e4) return (n / 1e3).toFixed(1).replace(/\.0$/, '') + 'K';
+      return formatMoney(n);
+    }
+
+    function formatRelativeTime(ts) {
+      if (!ts) return '';
+      const diff = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+      if (diff < 30) return 'только что';
+      if (diff < 60) return `${diff} сек назад`;
+      const mins = Math.floor(diff / 60);
+      if (mins < 60) return `${mins} мин назад`;
+      const hrs = Math.floor(mins / 60);
+      if (hrs < 24) return `${hrs} ч назад`;
+      return `${Math.floor(hrs / 24)} дн назад`;
+    }
+
+    function pluralBalls(n) {
+      const mod10 = n % 10, mod100 = n % 100;
+      if (mod10 === 1 && mod100 !== 11) return `${n} шар`;
+      if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${n} шара`;
+      return `${n} шаров`;
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    /* Безопасная отрисовка скруглённого прямоугольника (для старых WebView) */
+    function drawRoundedRect(ctx, x, y, w, h, r) {
+      if (typeof ctx.roundRect === 'function') {
+        ctx.beginPath();
+        ctx.roundRect(x, y, w, h, r);
+        return;
+      }
+      const rad = Math.min(r, w * 0.5, h * 0.5);
+      ctx.beginPath();
+      ctx.moveTo(x + rad, y);
+      ctx.arcTo(x + w, y, x + w, y + h, rad);
+      ctx.arcTo(x + w, y + h, x, y + h, rad);
+      ctx.arcTo(x, y + h, x, y, rad);
+      ctx.arcTo(x, y, x + w, y, rad);
+      ctx.closePath();
+    }
+
+    /* ==========================================================================
+       3. AUDIO ENGINE (PROCEDURAL WEB AUDIO API + POLYPHONY THROTTLING)
+       ========================================================================== */
+    class AudioEngine {
+      constructor() {
+        this.ctx = null;
+        this.masterGain = null;
+        this.compressor = null;
+        this.bgmGain = null;
+        this.sfxGain = null;
+        this.mode = 'all'; // 'all' | 'sfx' | 'mute'
+        this.unlocked = false;
+        this.bgmTimer = null;
+        this.bgmStep = 0;
+
+        // Ограничитель полифонии для 100 шариков
+        this.lastPlinkTime = 0;
+        this.activePlinks = 0;
+        this.maxPlinks = 12;
+      }
+
+      unlock() {
+        if (this.unlocked) {
+          if (this.ctx && this.ctx.state === 'suspended') {
+            this.ctx.resume().catch(() => {});
+          }
+          return;
+        }
+        try {
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          if (!AudioCtx) return;
+          this.ctx = new AudioCtx();
+
+          this.compressor = this.ctx.createDynamicsCompressor();
+          this.compressor.threshold.setValueAtTime(-14, this.ctx.currentTime);
+          this.compressor.knee.setValueAtTime(18, this.ctx.currentTime);
+          this.compressor.ratio.setValueAtTime(8, this.ctx.currentTime);
+          this.compressor.attack.setValueAtTime(0.003, this.ctx.currentTime);
+          this.compressor.release.setValueAtTime(0.12, this.ctx.currentTime);
+
+          this.masterGain = this.ctx.createGain();
+          this.bgmGain = this.ctx.createGain();
+          this.sfxGain = this.ctx.createGain();
+
+          this.bgmGain.connect(this.compressor);
+          this.sfxGain.connect(this.compressor);
+          this.compressor.connect(this.masterGain);
+          this.masterGain.connect(this.ctx.destination);
+
+          this.unlocked = true;
+          this.applyMode();
+          this.startBgm();
+        } catch (err) {
+          console.warn('Audio init failed:', err);
+        }
+      }
+
+      setMode(mode) {
+        this.mode = mode;
+        this.applyMode();
+      }
+
+      applyMode() {
+        if (!this.unlocked || !this.ctx) return;
+        const now = this.ctx.currentTime;
+        if (this.mode === 'mute') {
+          this.bgmGain.gain.setTargetAtTime(0.0001, now, 0.05);
+          this.sfxGain.gain.setTargetAtTime(0.0001, now, 0.05);
+        } else if (this.mode === 'sfx') {
+          this.bgmGain.gain.setTargetAtTime(0.0001, now, 0.05);
+          this.sfxGain.gain.setTargetAtTime(0.85, now, 0.05);
+        } else {
+          this.bgmGain.gain.setTargetAtTime(0.22, now, 0.08);
+          this.sfxGain.gain.setTargetAtTime(0.85, now, 0.05);
+        }
+      }
+
+      pauseBgm() {
+        if (this.ctx && this.ctx.state === 'running') {
+          this.ctx.suspend().catch(() => {});
+        }
+      }
+
+      resumeBgm() {
+        if (this.unlocked && this.ctx && this.ctx.state === 'suspended' && this.mode !== 'mute') {
+          this.ctx.resume().catch(() => {});
+        }
+      }
+
+      /* Мягкий лаунж / deep-casino бит в стиле VIP-зала */
+      startBgm() {
+        if (this.bgmTimer) return;
+        const chords = [
+          [146.83, 220.00, 261.63, 329.63], // Dm9
+          [116.54, 174.61, 220.00, 293.66], // Bbmaj7
+          [98.00,  174.61, 233.08, 293.66], // Gm9
+          [110.00, 164.81, 207.65, 261.63]  // A7
+        ];
+        const stepMs = 460;
+
+        this.bgmTimer = setInterval(() => {
+          if (!this.unlocked || !this.ctx || this.ctx.state !== 'running' || this.mode !== 'all' || document.hidden) return;
+          const now = this.ctx.currentTime;
+          const step = this.bgmStep % 16;
+          const chordIdx = Math.floor(step / 4);
+          const chord = chords[chordIdx];
+
+          if (step % 4 === 0) {
+            chord.forEach((freq, i) => {
+              const osc = this.ctx.createOscillator();
+              const gain = this.ctx.createGain();
+              osc.type = i === 0 ? 'triangle' : 'sine';
+              osc.frequency.setValueAtTime(freq, now);
+
+              gain.gain.setValueAtTime(0.0001, now);
+              gain.gain.linearRampToValueAtTime(i === 0 ? 0.14 : 0.055, now + 0.06);
+              gain.gain.exponentialRampToValueAtTime(0.0008, now + 1.75);
+
+              osc.connect(gain);
+              gain.connect(this.bgmGain);
+              osc.start(now);
+              osc.stop(now + 1.8);
+            });
+          }
+
+          if (step % 2 === 0) {
+            const bass = this.ctx.createOscillator();
+            const bg = this.ctx.createGain();
+            bass.type = 'sine';
+            bass.frequency.setValueAtTime(chord[0] * 0.5, now);
+            bg.gain.setValueAtTime(0.0001, now);
+            bg.gain.linearRampToValueAtTime(0.16, now + 0.02);
+            bg.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+            bass.connect(bg);
+            bg.connect(this.bgmGain);
+            bass.start(now);
+            bass.stop(now + 0.36);
+          }
+
+          if (step % 2 === 1) {
+            const bufferSize = Math.floor(this.ctx.sampleRate * 0.03);
+            const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+            const data = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.25));
+            const noise = this.ctx.createBufferSource();
+            noise.buffer = buffer;
+
+            const hp = this.ctx.createBiquadFilter();
+            hp.type = 'highpass';
+            hp.frequency.setValueAtTime(7500, now);
+
+            const ng = this.ctx.createGain();
+            ng.gain.setValueAtTime(0.032, now);
+
+            noise.connect(hp);
+            hp.connect(ng);
+            ng.connect(this.bgmGain);
+            noise.start(now);
+          }
+
+          this.bgmStep++;
+        }, stepMs);
+      }
+
+      playClick() {
+        if (!this.unlocked || this.mode === 'mute' || !this.ctx) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const g = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(640, now);
+        osc.frequency.exponentialRampToValueAtTime(320, now + 0.045);
+        g.gain.setValueAtTime(0.12, now);
+        g.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+        osc.connect(g);
+        g.connect(this.sfxGain);
+        osc.start(now);
+        osc.stop(now + 0.055);
+      }
+
+      playDrop(count) {
+        if (!this.unlocked || this.mode === 'mute' || !this.ctx) return;
+        const now = this.ctx.currentTime;
+        const taps = Math.min(count, 6);
+        for (let i = 0; i < taps; i++) {
+          const t = now + i * 0.035;
+          const osc = this.ctx.createOscillator();
+          const g = this.ctx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(420 + i * 45, t);
+          osc.frequency.exponentialRampToValueAtTime(220, t + 0.06);
+          g.gain.setValueAtTime(0.11, t);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 0.065);
+          osc.connect(g);
+          g.connect(this.sfxGain);
+          osc.start(t);
+          osc.stop(t + 0.07);
+        }
+      }
+
+      /* Кристально-металлический «плинк» с ростом pitch по рядам и троттлингом */
+      playPinHit(row) {
+        if (!this.unlocked || this.mode === 'mute' || !this.ctx) return;
+        const nowMs = performance.now();
+        if (nowMs - this.lastPlinkTime < 28 || this.activePlinks >= this.maxPlinks) return;
+        this.lastPlinkTime = nowMs;
+        this.activePlinks++;
+
+        const now = this.ctx.currentTime;
+        const baseFreq = 580 + row * 48 + (Math.random() * 24 - 12);
+        const osc = this.ctx.createOscillator();
+        const g = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(baseFreq, now);
+        osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.06, now + 0.055);
+
+        g.gain.setValueAtTime(0.085, now);
+        g.gain.exponentialRampToValueAtTime(0.0008, now + 0.065);
+
+        osc.connect(g);
+        g.connect(this.sfxGain);
+        osc.start(now);
+        osc.stop(now + 0.07);
+        osc.onended = () => { this.activePlinks = Math.max(0, this.activePlinks - 1); };
+      }
+
+      playBucketHit(mult) {
+        if (!this.unlocked || this.mode === 'mute' || !this.ctx) return;
+        const now = this.ctx.currentTime;
+
+        if (mult < 1) {
+          const osc = this.ctx.createOscillator();
+          const g = this.ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(220, now);
+          osc.frequency.exponentialRampToValueAtTime(140, now + 0.11);
+          g.gain.setValueAtTime(0.11, now);
+          g.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+          osc.connect(g);
+          g.connect(this.sfxGain);
+          osc.start(now);
+          osc.stop(now + 0.13);
+        } else if (mult < 10) {
+          [523.25, 659.25].forEach((f, idx) => {
+            const osc = this.ctx.createOscillator();
+            const g = this.ctx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(f, now + idx * 0.03);
+            g.gain.setValueAtTime(0.12, now + idx * 0.03);
+            g.gain.exponentialRampToValueAtTime(0.001, now + 0.22 + idx * 0.03);
+            osc.connect(g);
+            g.connect(this.sfxGain);
+            osc.start(now + idx * 0.03);
+            osc.stop(now + 0.25 + idx * 0.03);
+          });
+        } else {
+          const notes = [523.25, 659.25, 783.99, 1046.5, 1318.5];
+          notes.forEach((f, idx) => {
+            const t = now + idx * 0.055;
+            const osc = this.ctx.createOscillator();
+            const g = this.ctx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(f, t);
+            g.gain.setValueAtTime(0.18, t);
+            g.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+            osc.connect(g);
+            g.connect(this.sfxGain);
+            osc.start(t);
+            osc.stop(t + 0.48);
+          });
+        }
+      }
+
+      playCoinBonus() {
+        if (!this.unlocked || this.mode === 'mute' || !this.ctx) return;
+        const now = this.ctx.currentTime;
+        [880, 1174.66, 1396.91, 1760].forEach((f, i) => {
+          const t = now + i * 0.055;
+          const osc = this.ctx.createOscillator();
+          const g = this.ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(f, t);
+          g.gain.setValueAtTime(0.15, t);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+          osc.connect(g);
+          g.connect(this.sfxGain);
+          osc.start(t);
+          osc.stop(t + 0.32);
+        });
+      }
+    }
+
+    const audio = new AudioEngine();
+
+    /* ==========================================================================
+       4. GAME CONFIGURATION, QUESTS & PERSISTENT STATE
+       ========================================================================== */
+    const RISK_TABLES = {
+      low:    [16, 9, 2, 1.4, 1.4, 1.2, 1.1, 1, 0.5, 1, 1.1, 1.2, 1.4, 1.4, 2, 9, 16],
+      medium: [110, 41, 10, 5, 3, 1.5, 1, 0.5, 0.3, 0.5, 1, 1.5, 3, 5, 10, 41, 110],
+      high:   [1000, 130, 26, 9, 4, 2, 0.2, 0.2, 0.2, 0.2, 0.2, 2, 4, 9, 26, 130, 1000]
+    };
+
+    const QUEST_DEFINITIONS = [
+      {
+        id: 'total_win_100k',
+        title: 'Мастер накоплений',
+        desc: 'Заработать суммарно $100,000 выигрышами',
+        target: 100000,
+        getProgress: s => s.stats.totalWon,
+        formatVal: v => '$' + formatCompact(v),
+        rewardLabel: '5 × 🎟️ $30K',
+        reward: { type: 'tickets', nominal: 30000, count: 5 }
+      },
+      {
+        id: 'single_bet_200k',
+        title: 'Крупный куш',
+        desc: 'Заработать $200,000 за одну ставку (раунд)',
+        target: 200000,
+        getProgress: s => s.stats.maxRoundWin,
+        formatVal: v => '$' + formatCompact(v),
+        rewardLabel: '+$150,000',
+        reward: { type: 'cash', amount: 150000 }
+      },
+      {
+        id: 'first_volley_25',
+        title: 'Первый залп',
+        desc: 'Запустить ставку минимум из 25 шариков',
+        target: 25,
+        getProgress: s => s.stats.maxBallsInRound,
+        formatVal: v => `${Math.floor(v)} шт`,
+        rewardLabel: '+$5,000',
+        reward: { type: 'cash', amount: 5000 }
+      },
+      {
+        id: 'hunter_10x',
+        title: 'Охотник за иксами',
+        desc: 'Поймать множитель 10× или выше',
+        target: 10,
+        getProgress: s => s.stats.maxMultiplier,
+        formatVal: v => `${v}×`,
+        rewardLabel: '1 × 🎟️ $10K',
+        reward: { type: 'tickets', nominal: 10000, count: 1 }
+      },
+      {
+        id: 'ball_storm_100',
+        title: 'Шторм шариков',
+        desc: 'Сделать ставку на максимум — 100 шариков за раз',
+        target: 100,
+        getProgress: s => s.stats.maxBallsInRound,
+        formatVal: v => `${Math.floor(v)} шт`,
+        rewardLabel: '+$25,000',
+        reward: { type: 'cash', amount: 25000 }
+      },
+      {
+        id: 'vip_millionaire',
+        title: 'VIP-миллионер',
+        desc: 'Заработать суммарно $1,000,000',
+        target: 1000000,
+        getProgress: s => s.stats.totalWon,
+        formatVal: v => '$' + formatCompact(v),
+        rewardLabel: '5 × 🎟️ $50K',
+        reward: { type: 'tickets', nominal: 50000, count: 5 }
+      }
+    ];
+
+    const STORAGE_KEY = `nvr_plinko_state_v1_${tgUser ? tgUser.id : 'guest'}`;
+
+    const defaultState = () => ({
+      balance: 10000,
+      betPerBall: 100,
+      ballCount: 1,
+      risk: 'medium',
+      soundMode: 'all',
+      freeBetMode: false,
+      activeTicketNominal: null,
+      tickets: {},
+      claimedQuests: {},
+      notifiedQuests: {},
+      history: [],
+      stats: {
+        totalWagered: 0,
+        totalWon: 0,
+        maxRoundWin: 0,
+        maxMultiplier: 0,
+        totalBalls: 0,
+        roundsCount: 0,
+        maxBallsInRound: 0,
+        lastBet: 0,
+        lastWin: 0
+      }
+    });
+
+    let state = defaultState();
+    let displayedBalance = 10000;
+    let balanceTween = null;
+
+    function loadState() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          state = {
+            ...defaultState(),
+            ...parsed,
+            stats: { ...defaultState().stats, ...(parsed.stats || {}) },
+            tickets: parsed.tickets || {},
+            claimedQuests: parsed.claimedQuests || {},
+            notifiedQuests: parsed.notifiedQuests || {},
+            history: Array.isArray(parsed.history) ? parsed.history.slice(0, 8) : []
+          };
+          if (!RISK_TABLES[state.risk]) state.risk = 'medium';
+          state.ballCount = Math.max(1, Math.min(100, Math.floor(Number(state.ballCount) || 1)));
+          state.betPerBall = Math.max(5, Math.floor(Number(state.betPerBall) || 100));
+        }
+      } catch (err) {
+        console.warn('State load error:', err);
+      }
+
+      try {
+        if (tg && tg.CloudStorage && typeof tg.CloudStorage.getItem === 'function') {
+          tg.CloudStorage.getItem(STORAGE_KEY, (err, val) => {
+            if (!err && val) {
+              try {
+                const cloud = JSON.parse(val);
+                if (cloud && cloud.stats && cloud.stats.roundsCount > state.stats.roundsCount) {
+                  state = {
+                    ...defaultState(),
+                    ...cloud,
+                    stats: { ...defaultState().stats, ...(cloud.stats || {}) }
+                  };
+                  displayedBalance = state.balance;
+                  syncAllUI();
+                }
+              } catch (_) {}
+            }
+          });
+        }
+      } catch (_) {}
+
+      displayedBalance = state.balance;
+      audio.setMode(state.soundMode);
+    }
+
+    let cloudSaveTimer = null;
+    function saveState() {
+      try {
+        const serialized = JSON.stringify(state);
+        localStorage.setItem(STORAGE_KEY, serialized);
+
+        if (tg && tg.CloudStorage && typeof tg.CloudStorage.setItem === 'function') {
+          clearTimeout(cloudSaveTimer);
+          cloudSaveTimer = setTimeout(() => {
+            try { tg.CloudStorage.setItem(STORAGE_KEY, serialized); } catch (_) {}
+          }, 1500);
+        }
+      } catch (err) {
+        console.warn('State save error:', err);
+      }
+    }
+
+    /* ==========================================================================
+       5. REAL ONLINE ENGINE (FIREBASE REALTIME DATABASE — STRICTLY NO BOTS)
+       ========================================================================== */
+    const OnlineService = {
+      db: null,
+      connected: false,
+      presenceMap: {},
+      playersMap: {},
+      activeTab: 'online',
+
+      init() {
+        const hasConfig = Boolean(FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.databaseURL);
+        if (!hasConfig || typeof firebase === 'undefined') {
+          this.renderCounter();
+          return;
+        }
+        try {
+          if (!firebase.apps.length) {
+            firebase.initializeApp(FIREBASE_CONFIG);
+          }
+          this.db = firebase.database();
+
+          this.db.ref('presence').on('value', snap => {
+            this.presenceMap = snap.val() || {};
+            this.renderCounter();
+            if (document.getElementById('online-modal').classList.contains('open')) {
+              this.renderModalList();
+            }
+          });
+
+          this.db.ref('players').on('value', snap => {
+            this.playersMap = snap.val() || {};
+            if (document.getElementById('online-modal').classList.contains('open')) {
+              this.renderModalList();
+            }
+          });
+
+          if (tgUser && tgUser.id) {
+            const uid = String(tgUser.id);
+            const presRef = this.db.ref(`presence/${uid}`);
+            this.db.ref('.info/connected').on('value', snap => {
+              this.connected = Boolean(snap.val());
+              if (this.connected) {
+                presRef.onDisconnect().remove();
+                presRef.set({
+                  id: uid,
+                  name: this.getTgDisplayName(),
+                  joinedAt: firebase.database.ServerValue.TIMESTAMP
+                });
+              }
+              this.renderCounter();
+            });
+          }
+        } catch (err) {
+          console.warn('Firebase init error:', err);
+          this.renderCounter();
+        }
+      },
+
+      getTgDisplayName() {
+        if (!tgUser) return 'Гость';
+        if (tgUser.first_name) {
+          return tgUser.last_name ? `${tgUser.first_name} ${tgUser.last_name}` : tgUser.first_name;
+        }
+        return tgUser.username ? `@${tgUser.username}` : `User #${tgUser.id}`;
+      },
+
+      syncPlayerBet(roundBet, roundWin, bestMult) {
+        if (!this.db || !tgUser || !tgUser.id) return;
+        try {
+          const uid = String(tgUser.id);
+          const profit = Math.round(state.stats.totalWon - state.stats.totalWagered);
+          this.db.ref(`players/${uid}`).set({
+            id: uid,
+            name: this.getTgDisplayName(),
+            photoUrl: tgUser.photo_url || '',
+            hasBet: true,
+            betsCount: state.stats.roundsCount,
+            lastBet: Math.round(roundBet),
+            lastWin: Math.round(roundWin),
+            bestMult: Math.max(state.stats.maxMultiplier, bestMult || 0),
+            profit: profit,
+            lastActive: Date.now()
+          });
+        } catch (err) {
+          console.warn('Firebase player sync error:', err);
+        }
+      },
+
+      renderCounter() {
+        const dot = document.getElementById('online-dot');
+        const txt = document.getElementById('online-count-text');
+        if (!this.db) {
+          const count = tgUser ? 1 : 0;
+          dot.classList.toggle('offline', count === 0);
+          txt.textContent = count === 1 ? 'Онлайн: 1 (лок.)' : 'Онлайн: 0';
+          return;
+        }
+        const count = Object.keys(this.presenceMap).length;
+        dot.classList.toggle('offline', count === 0);
+        txt.textContent = `Онлайн: ${count}`;
+      },
+
+      renderModalList() {
+        const container = document.getElementById('online-list');
+        if (!this.db) {
+          container.innerHTML = `
+            <div class="empty-state">
+              <div style="font-size:24px;margin-bottom:8px;">📡</div>
+              <div style="color:#FCE38A;font-weight:700;margin-bottom:4px;">Firebase не подключён</div>
+              <div>Укажите ключи <code style="color:#34D399;">FIREBASE_CONFIG</code> в коде, чтобы видеть реальных Telegram-игроков в прямом эфире. Боты в игре полностью отключены.</div>
+            </div>`;
+          return;
+        }
+
+        const allRealBettingPlayers = Object.values(this.playersMap).filter(
+          p => p && p.id && p.hasBet === true && (p.betsCount || 0) > 0
+        );
+
+        const list = this.activeTab === 'online'
+          ? allRealBettingPlayers.filter(p => Boolean(this.presenceMap[String(p.id)]))
+          : allRealBettingPlayers;
+
+        list.sort((a, b) => (b.lastActive || 0) - (a.lastActive || 0));
+
+        if (!list.length) {
+          container.innerHTML = `
+            <div class="empty-state">
+              <div style="font-size:24px;margin-bottom:8px;">🎰</div>
+              <div>${this.activeTab === 'online'
+                ? 'Сейчас нет активных Telegram-игроков, сделавших ставку.'
+                : 'Пока никто из реальных Telegram-игроков не сделал ставку.'}</div>
+            </div>`;
+          return;
+        }
+
+        container.innerHTML = list.map(p => {
+          const isOnline = Boolean(this.presenceMap[String(p.id)]);
+          const safeName = escapeHtml(p.name || 'Игрок');
+          const safeInitials = escapeHtml((p.name || 'U').trim().slice(0, 2).toUpperCase());
+          const avatarHtml = p.photoUrl
+            ? `<img class="avatar-img" src="${escapeHtml(p.photoUrl)}" alt="" onerror="this.outerHTML='<div class=\\'avatar-initials\\'>${safeInitials}</div>'">`
+            : `<div class="avatar-initials">${safeInitials}</div>`;
+          const profitSign = (p.profit || 0) >= 0 ? '+' : '−';
+          const profitClass = (p.profit || 0) >= 0 ? 'pos' : 'neg';
+          return `
+            <div class="player-card">
+              <div class="player-avatar-wrap">
+                <div class="avatar-ring" style="width:38px;height:38px;">${avatarHtml}</div>
+                ${isOnline ? '<span class="player-online-indicator"></span>' : ''}
+              </div>
+              <div class="player-info">
+                <div class="player-name">${safeName}</div>
+                <div class="player-meta">Ставка: $${formatCompact(p.lastBet)} · ${formatRelativeTime(p.lastActive)}</div>
+              </div>
+              <div class="player-stats tabular">
+                <div class="player-profit ${profitClass}">${profitSign}$${formatCompact(Math.abs(p.profit || 0))}</div>
+                <div class="player-last">Выигр: $${formatCompact(p.lastWin)} · ${p.bestMult || 0}×</div>
+              </div>
+            </div>`;
+        }).join('');
+      }
+    };
+
+    /* ==========================================================================
+       6. PLINKO HIGH-PERFORMANCE CANVAS 2D ENGINE (60 FPS, O(1) PHYSICS, POOLING)
+       ========================================================================== */
+    const ROWS = 16;
+    const BUCKETS = 17;
+
+    function getBucketStyle(index) {
+      const dist = Math.abs(index - 8) / 8;
+      if (dist >= 0.87) return { bg: '#E11D48', border: '#FDA4AF', text: '#FFFFFF', glow: 'rgba(244,63,94,0.65)' };
+      if (dist >= 0.72) return { bg: '#DB2777', border: '#F9A8D4', text: '#FFFFFF', glow: 'rgba(219,39,119,0.55)' };
+      if (dist >= 0.56) return { bg: '#EA580C', border: '#FDBA74', text: '#FFFFFF', glow: 'rgba(234,88,12,0.5)' };
+      if (dist >= 0.37) return { bg: '#D97706', border: '#FDE68A', text: '#070B10', glow: 'rgba(245,158,11,0.45)' };
+      if (dist >= 0.18) return { bg: '#CA8A04', border: '#FEF08A', text: '#070B10', glow: 'rgba(234,179,8,0.4)' };
+      return { bg: '#92400E', border: '#FCD34D', text: '#FEF3C7', glow: 'rgba(245,197,66,0.35)' };
+    }
+
+    class PlinkoEngine {
+      constructor(canvas) {
+        this.canvas = canvas;
+        this.ctx = canvas.getContext('2d', { alpha: true });
+
+        this.width = 0;
+        this.height = 0;
+        this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+        this.startY = 0;
+        this.rowSpacing = 0;
+        this.colSpacing = 0;
+        this.pinRadius = 3;
+        this.ballRadius = 5.5;
+        this.bucketY = 0;
+        this.bucketH = 26;
+        this.pinsByRow = [];
+
+        this.staticCanvas = document.createElement('canvas');
+        this.staticCtx = this.staticCanvas.getContext('2d');
+        this.normalBallSprite = document.createElement('canvas');
+        this.freeBallSprite = document.createElement('canvas');
+
+        this.balls = [];
+        this.ballPool = [];
+        this.ripples = [];
+        this.ripplePool = [];
+        this.floatTexts = [];
+        this.floatTextPool = [];
+        this.particles = [];
+        this.particlePool = [];
+
+        this.bucketAnim = Array.from({ length: BUCKETS }, () => ({ y: 0, vy: 0, flash: 0 }));
+
+        this.activeRounds = new Map();
+        this.spawnQueue = [];
+        this.roundCounter = 1;
+
+        this.shakeTime = 0;
+        this.shakeMag = 0;
+
+        this.lastFrameTime = 0;
+        this.accumulator = 0;
+        this.fixedDt = 1 / 120;
+        this.running = false;
+        this.rafId = null;
+
+        this.resize();
+      }
+
+      resize() {
+        const parent = this.canvas.parentElement;
+        if (!parent) return;
+        const rect = parent.getBoundingClientRect();
+        const nextW = Math.max(260, rect.width);
+        const nextH = Math.max(210, rect.height);
+        if (Math.abs(nextW - this.width) < 1 && Math.abs(nextH - this.height) < 1 && this.pinsByRow.length > 0) {
+          return;
+        }
+
+        this.width = nextW;
+        this.height = nextH;
+        this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+        this.canvas.width = Math.round(this.width * this.dpr);
+        this.canvas.height = Math.round(this.height * this.dpr);
+        this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+
+        const padX = Math.max(12, this.width * 0.04);
+        const usableW = this.width - padX * 2;
+        this.colSpacing = usableW / 17.6;
+
+        this.bucketH = Math.max(22, Math.min(28, this.height * 0.075));
+        const topMargin = Math.max(16, this.height * 0.045);
+        const bottomMargin = this.bucketH + 16;
+        const usableH = this.height - topMargin - bottomMargin;
+        this.rowSpacing = usableH / ROWS;
+
+        this.startY = topMargin;
+        this.bucketY = this.startY + ROWS * this.rowSpacing + 4;
+
+        this.pinRadius = Math.max(2.1, Math.min(3.5, this.colSpacing * 0.165));
+        this.ballRadius = Math.max(3.8, Math.min(6.4, this.colSpacing * 0.285));
+
+        this.pinsByRow = [];
+        const cx = this.width * 0.5;
+        for (let r = 0; r < ROWS; r++) {
+          const count = r + 3;
+          const rowWidth = (count - 1) * this.colSpacing;
+          const leftX = cx - rowWidth * 0.5;
+          const y = this.startY + r * this.rowSpacing;
+          const rowPins = [];
+          for (let c = 0; c < count; c++) {
+            rowPins.push({ x: leftX + c * this.colSpacing, y, flash: 0 });
+          }
+          this.pinsByRow.push(rowPins);
+        }
+
+        this.prerenderStaticLayer();
+        this.prerenderBallSprites();
+      }
+
+      prerenderStaticLayer() {
+        this.staticCanvas.width = Math.round(this.width * this.dpr);
+        this.staticCanvas.height = Math.round(this.height * this.dpr);
+        const sctx = this.staticCtx;
+        sctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+        sctx.clearRect(0, 0, this.width, this.height);
+
+        const grad = sctx.createRadialGradient(
+          this.width * 0.5, this.height * 0.45, 10,
+          this.width * 0.5, this.height * 0.48, this.width * 0.65
+        );
+        grad.addColorStop(0, 'rgba(245, 197, 66, 0.08)');
+        grad.addColorStop(0.55, 'rgba(16, 185, 129, 0.04)');
+        grad.addColorStop(1, 'rgba(7, 11, 16, 0)');
+        sctx.fillStyle = grad;
+        sctx.fillRect(0, 0, this.width, this.height);
+
+        for (let r = 0; r < ROWS; r++) {
+          const row = this.pinsByRow[r];
+          for (let c = 0; c < row.length; c++) {
+            const p = row[c];
+            sctx.beginPath();
+            sctx.arc(p.x, p.y, this.pinRadius * 1.65, 0, Math.PI * 2);
+            sctx.fillStyle = 'rgba(245, 197, 66, 0.09)';
+            sctx.fill();
+
+            const pg = sctx.createRadialGradient(
+              p.x - this.pinRadius * 0.35, p.y - this.pinRadius * 0.35, 0.2,
+              p.x, p.y, this.pinRadius
+            );
+            pg.addColorStop(0, '#FFFFFF');
+            pg.addColorStop(0.55, '#E2E8F0');
+            pg.addColorStop(1, '#64748B');
+            sctx.beginPath();
+            sctx.arc(p.x, p.y, this.pinRadius, 0, Math.PI * 2);
+            sctx.fillStyle = pg;
+            sctx.fill();
+          }
+        }
+      }
+
+      prerenderBallSprites() {
+        const size = Math.ceil((this.ballRadius * 3.4) * this.dpr);
+        const half = size / 2;
+        const r = this.ballRadius * this.dpr;
+
+        this.normalBallSprite.width = size;
+        this.normalBallSprite.height = size;
+        const nctx = this.normalBallSprite.getContext('2d');
+        nctx.clearRect(0, 0, size, size);
+
+        const nGlow = nctx.createRadialGradient(half, half, r * 0.3, half, half, r * 1.65);
+        nGlow.addColorStop(0, 'rgba(245, 197, 66, 0.55)');
+        nGlow.addColorStop(1, 'rgba(245, 197, 66, 0)');
+        nctx.fillStyle = nGlow;
+        nctx.beginPath();
+        nctx.arc(half, half, r * 1.65, 0, Math.PI * 2);
+        nctx.fill();
+
+        const nBody = nctx.createRadialGradient(half - r * 0.35, half - r * 0.35, r * 0.1, half, half, r);
+        nBody.addColorStop(0, '#FFFBEB');
+        nBody.addColorStop(0.35, '#F5C542');
+        nBody.addColorStop(0.8, '#D97706');
+        nBody.addColorStop(1, '#78350F');
+        nctx.fillStyle = nBody;
+        nctx.beginPath();
+        nctx.arc(half, half, r, 0, Math.PI * 2);
+        nctx.fill();
+
+        nctx.fillStyle = 'rgba(255,255,255,0.85)';
+        nctx.beginPath();
+        nctx.arc(half - r * 0.32, half - r * 0.32, r * 0.24, 0, Math.PI * 2);
+        nctx.fill();
+
+        this.freeBallSprite.width = size;
+        this.freeBallSprite.height = size;
+        const fctx = this.freeBallSprite.getContext('2d');
+        fctx.clearRect(0, 0, size, size);
+
+        const fGlow = fctx.createRadialGradient(half, half, r * 0.3, half, half, r * 1.7);
+        fGlow.addColorStop(0, 'rgba(52, 211, 153, 0.72)');
+        fGlow.addColorStop(0.55, 'rgba(252, 227, 138, 0.3)');
+        fGlow.addColorStop(1, 'rgba(52, 211, 153, 0)');
+        fctx.fillStyle = fGlow;
+        fctx.beginPath();
+        fctx.arc(half, half, r * 1.7, 0, Math.PI * 2);
+        fctx.fill();
+
+        const fBody = fctx.createRadialGradient(half - r * 0.35, half - r * 0.35, r * 0.1, half, half, r);
+        fBody.addColorStop(0, '#FFFFFF');
+        fBody.addColorStop(0.3, '#A7F3D0');
+        fBody.addColorStop(0.7, '#10B981');
+        fBody.addColorStop(1, '#065F46');
+        fctx.fillStyle = fBody;
+        fctx.beginPath();
+        fctx.arc(half, half, r, 0, Math.PI * 2);
+        fctx.fill();
+
+        fctx.strokeStyle = '#FCE38A';
+        fctx.lineWidth = Math.max(1, r * 0.14);
+        fctx.stroke();
+      }
+
+      launchRound({ count, betPerBall, risk, isFreeBet }) {
+        const roundId = this.roundCounter++;
+        this.activeRounds.set(roundId, {
+          roundId,
+          totalBalls: count,
+          landedBalls: 0,
+          totalBet: betPerBall * count,
+          totalWin: 0,
+          bestMult: 0,
+          isFreeBet,
+          risk
+        });
+
+        const intervalMs = count > 50 ? 25 : count > 15 ? 36 : 52;
+        const now = performance.now();
+        for (let i = 0; i < count; i++) {
+          this.spawnQueue.push({
+            spawnAt: now + i * intervalMs,
+            betAmount: betPerBall,
+            riskProfile: risk,
+            roundId,
+            isFreeBet
+          });
+        }
+      }
+
+      spawnBall(item) {
+        const b = this.ballPool.pop() || { trail: [] };
+        const jitter = (Math.random() - 0.5) * this.colSpacing * 0.55;
+        b.x = this.width * 0.5 + jitter;
+        b.y = Math.max(4, this.startY - this.rowSpacing * 0.72);
+        b.vx = (Math.random() - 0.5) * 18;
+        b.vy = 20;
+        b.betAmount = item.betAmount;
+        b.riskProfile = item.riskProfile;
+        b.roundId = item.roundId;
+        b.isFreeBet = item.isFreeBet;
+        b.trail.length = 0;
+        this.balls.push(b);
+      }
+
+      addRipple(x, y) {
+        const rp = this.ripplePool.pop() || {};
+        rp.x = x;
+        rp.y = y;
+        rp.r = this.pinRadius;
+        rp.alpha = 0.85;
+        this.ripples.push(rp);
+      }
+
+      addFloatText(x, y, text, color, isBig) {
+        if (this.floatTexts.length > 35) return;
+        const ft = this.floatTextPool.pop() || {};
+        ft.x = x;
+        ft.y = y;
+        ft.text = text;
+        ft.color = color;
+        ft.alpha = 1;
+        ft.vy = isBig ? -44 : -32;
+        ft.scale = isBig ? 1.25 : 1;
+        this.floatTexts.push(ft);
+      }
+
+      addBurstParticles(x, y, color, count) {
+        const cap = Math.min(count, 80 - this.particles.length);
+        for (let i = 0; i < cap; i++) {
+          const p = this.particlePool.pop() || {};
+          const ang = -Math.PI * Math.random();
+          const spd = 60 + Math.random() * 140;
+          p.x = x;
+          p.y = y;
+          p.vx = Math.cos(ang) * spd;
+          p.vy = Math.sin(ang) * spd - 40;
+          p.color = color;
+          p.alpha = 1;
+          p.size = 2 + Math.random() * 2.5;
+          this.particles.push(p);
+        }
+      }
+
+      settleAllPendingImmediately() {
+        while (this.spawnQueue.length > 0) {
+          const item = this.spawnQueue.pop();
+          const idx = this.simulateBinomialBucket();
+          this.resolveBallLanding(item.betAmount, item.riskProfile, item.roundId, item.isFreeBet, idx, true);
+        }
+        while (this.balls.length > 0) {
+          const b = this.balls.pop();
+          const idx = this.estimateBucketFromX(b.x);
+          this.resolveBallLanding(b.betAmount, b.riskProfile, b.roundId, b.isFreeBet, idx, true);
+          this.ballPool.push(b);
+        }
+        saveState();
+      }
+
+      simulateBinomialBucket() {
+        let right = 0;
+        for (let i = 0; i < ROWS; i++) {
+          if (Math.random() < 0.5) right++;
+        }
+        return right;
+      }
+
+      estimateBucketFromX(x) {
+        const lastRow = this.pinsByRow[ROWS - 1];
+        if (!lastRow || !lastRow.length) return 8;
+        const leftEdge = lastRow[0].x;
+        const idx = Math.floor((x - leftEdge) / this.colSpacing);
+        return Math.max(0, Math.min(BUCKETS - 1, idx));
+      }
+
+      start() {
+        if (this.running) return;
+        this.running = true;
+        this.lastFrameTime = performance.now();
+        const loop = (now) => {
+          if (!this.running) return;
+          const dt = Math.min(0.05, (now - this.lastFrameTime) / 1000);
+          this.lastFrameTime = now;
+
+          this.processSpawnQueue(now);
+          this.accumulator += dt;
+          while (this.accumulator >= this.fixedDt) {
+            this.stepPhysics(this.fixedDt);
+            this.accumulator -= this.fixedDt;
+          }
+          this.stepEffects(dt);
+          this.render();
+          this.rafId = requestAnimationFrame(loop);
+        };
+        this.rafId = requestAnimationFrame(loop);
+      }
+
+      stop() {
+        this.running = false;
+        if (this.rafId) cancelAnimationFrame(this.rafId);
+      }
+
+      processSpawnQueue(now) {
+        while (this.spawnQueue.length > 0 && this.spawnQueue[0].spawnAt <= now) {
+          const next = this.spawnQueue.shift();
+          this.spawnBall(next);
+        }
+      }
+
+      stepPhysics(dt) {
+        const gravity = this.height * 2.55;
+        const minDist = this.pinRadius + this.ballRadius;
+        const minDistSq = minDist * minDist;
+        const restitution = 0.48;
+        const cx = this.width * 0.5;
+
+        for (let i = this.balls.length - 1; i >= 0; i--) {
+          const b = this.balls[i];
+
+          b.vy += gravity * dt;
+          b.vx *= 0.996;
+          b.x += b.vx * dt;
+          b.y += b.vy * dt;
+
+          const progressY = Math.max(0, (b.y - this.startY) / (ROWS * this.rowSpacing));
+          const halfSpan = ((2 + progressY * ROWS) * 0.5 + 0.55) * this.colSpacing;
+          if (b.x < cx - halfSpan) {
+            b.x = cx - halfSpan;
+            b.vx = Math.abs(b.vx) * 0.5 + 15;
+          } else if (b.x > cx + halfSpan) {
+            b.x = cx + halfSpan;
+            b.vx = -Math.abs(b.vx) * 0.5 - 15;
+          }
+
+          const approxRow = Math.round((b.y - this.startY) / this.rowSpacing);
+          if (approxRow >= 0 && approxRow < ROWS) {
+            const rowPins = this.pinsByRow[approxRow];
+            const firstX = rowPins[0].x;
+            const approxCol = Math.round((b.x - firstX) / this.colSpacing);
+
+            for (let dc = -1; dc <= 1; dc++) {
+              const cIdx = approxCol + dc;
+              if (cIdx < 0 || cIdx >= rowPins.length) continue;
+              const pin = rowPins[cIdx];
+              const dx = b.x - pin.x;
+              const dy = b.y - pin.y;
+              const distSq = dx * dx + dy * dy;
+
+              if (distSq < minDistSq) {
+                const dist = Math.sqrt(distSq) || 0.001;
+                const nx = dx / dist;
+                const ny = dy / dist;
+
+                b.x = pin.x + nx * minDist;
+                b.y = pin.y + ny * minDist;
+
+                const dot = b.vx * nx + b.vy * ny;
+                if (dot < 0) {
+                  b.vx -= (1 + restitution) * dot * nx;
+                  b.vy -= (1 + restitution) * dot * ny;
+                }
+
+                const nudge = (Math.random() < 0.5 ? -1 : 1) * (this.colSpacing * 0.42 + Math.random() * 14);
+                if (Math.abs(dx) < 1.2) {
+                  b.vx += nudge;
+                } else {
+                  b.vx += (Math.random() - 0.5) * this.colSpacing * 0.6;
+                }
+
+                const maxVx = this.colSpacing * 4.2;
+                if (b.vx > maxVx) b.vx = maxVx;
+                if (b.vx < -maxVx) b.vx = -maxVx;
+
+                pin.flash = 1;
+                this.addRipple(pin.x, pin.y);
+                audio.playPinHit(approxRow);
+              }
+            }
+          }
+
+          if (b.y >= this.bucketY) {
+            const bucketIdx = this.estimateBucketFromX(b.x);
+            this.resolveBallLanding(b.betAmount, b.riskProfile, b.roundId, b.isFreeBet, bucketIdx, false);
+            this.balls.splice(i, 1);
+            this.ballPool.push(b);
+          }
+        }
+      }
+
+      resolveBallLanding(betAmount, riskProfile, roundId, isFreeBet, bucketIdx, silent) {
+        const mult = RISK_TABLES[riskProfile][bucketIdx];
+        const winAmount = betAmount * mult;
+
+        state.balance += winAmount;
+        state.stats.totalWon += winAmount;
+        state.stats.totalBalls += 1;
+        if (mult > state.stats.maxMultiplier) {
+          state.stats.maxMultiplier = mult;
+        }
+
+        const round = this.activeRounds.get(roundId);
+        if (round) {
+          round.landedBalls += 1;
+          round.totalWin += winAmount;
+          if (mult > round.bestMult) round.bestMult = mult;
+
+          if (round.landedBalls >= round.totalBalls) {
+            if (round.totalWin > state.stats.maxRoundWin) {
+              state.stats.maxRoundWin = round.totalWin;
+            }
+            state.stats.lastBet = round.totalBet;
+            state.stats.lastWin = round.totalWin;
+            this.activeRounds.delete(roundId);
+
+            if (!silent) {
+              OnlineService.syncPlayerBet(round.totalBet, round.totalWin, round.bestMult);
+            }
+          }
+        }
+
+        if (!silent) {
+          const ba = this.bucketAnim[bucketIdx];
+          ba.vy = 115;
+          ba.flash = 1;
+
+          const lastRow = this.pinsByRow[ROWS - 1];
+          const bx = lastRow[0].x + (bucketIdx + 0.5) * this.colSpacing;
+          const isBig = mult >= 10;
+          this.addFloatText(
+            bx,
+            this.bucketY - 6,
+            `+$${formatCompact(winAmount)}`,
+            isBig ? '#FCE38A' : (mult >= 1 ? '#34D399' : '#94A3B8'),
+            isBig
+          );
+
+          audio.playBucketHit(mult);
+          pushHistoryChip(mult);
+
+          if (isBig) {
+            this.shakeTime = 0.24;
+            this.shakeMag = mult >= 100 ? 6 : 3.5;
+            this.addBurstParticles(bx, this.bucketY, '#F5C542', 18);
+            triggerJackpotFX(mult);
+            Haptic.success();
+          }
+
+          animateBalanceTo(state.balance);
+          updateBonusButtonVisibility();
+          updateDropButtonState();
+          checkQuestNotifications();
+          saveState();
+        }
+      }
+
+      stepEffects(dt) {
+        for (let i = 0; i < this.balls.length; i++) {
+          const b = this.balls[i];
+          b.trail.push({ x: b.x, y: b.y });
+          if (b.trail.length > 6) b.trail.shift();
+        }
+
+        for (let r = 0; r < ROWS; r++) {
+          const row = this.pinsByRow[r];
+          for (let c = 0; c < row.length; c++) {
+            if (row[c].flash > 0) row[c].flash = Math.max(0, row[c].flash - dt * 5.5);
+          }
+        }
+
+        for (let i = this.ripples.length - 1; i >= 0; i--) {
+          const rp = this.ripples[i];
+          rp.r += dt * 42;
+          rp.alpha -= dt * 3.8;
+          if (rp.alpha <= 0) {
+            this.ripples.splice(i, 1);
+            this.ripplePool.push(rp);
+          }
+        }
+
+        for (let i = 0; i < BUCKETS; i++) {
+          const ba = this.bucketAnim[i];
+          if (ba.y !== 0 || ba.vy !== 0) {
+            const spring = -260 * ba.y;
+            const damping = -18 * ba.vy;
+            ba.vy += (spring + damping) * dt;
+            ba.y += ba.vy * dt;
+            if (Math.abs(ba.y) < 0.08 && Math.abs(ba.vy) < 0.5) {
+              ba.y = 0;
+              ba.vy = 0;
+            }
+          }
+          if (ba.flash > 0) ba.flash = Math.max(0, ba.flash - dt * 4);
+        }
+
+        for (let i = this.floatTexts.length - 1; i >= 0; i--) {
+          const ft = this.floatTexts[i];
+          ft.y += ft.vy * dt;
+          ft.alpha -= dt * 1.15;
+          if (ft.alpha <= 0) {
+            this.floatTexts.splice(i, 1);
+            this.floatTextPool.push(ft);
+          }
+        }
+
+        for (let i = this.particles.length - 1; i >= 0; i--) {
+          const p = this.particles[i];
+          p.vy += 380 * dt;
+          p.x += p.vx * dt;
+          p.y += p.vy * dt;
+          p.alpha -= dt * 1.6;
+          if (p.alpha <= 0) {
+            this.particles.splice(i, 1);
+            this.particlePool.push(p);
+          }
+        }
+
+        if (this.shakeTime > 0) {
+          this.shakeTime = Math.max(0, this.shakeTime - dt);
+        }
+      }
+
+      render() {
+        const ctx = this.ctx;
+        ctx.clearRect(0, 0, this.width, this.height);
+
+        ctx.save();
+        if (this.shakeTime > 0) {
+          const sx = (Math.random() - 0.5) * this.shakeMag * 2;
+          const sy = (Math.random() - 0.5) * this.shakeMag * 2;
+          ctx.translate(sx, sy);
+        }
+
+        ctx.drawImage(this.staticCanvas, 0, 0, this.width, this.height);
+
+        for (let r = 0; r < ROWS; r++) {
+          const row = this.pinsByRow[r];
+          for (let c = 0; c < row.length; c++) {
+            const p = row[c];
+            if (p.flash > 0.02) {
+              ctx.beginPath();
+              ctx.arc(p.x, p.y, this.pinRadius * 1.8, 0, Math.PI * 2);
+              ctx.fillStyle = `rgba(252, 227, 138, ${p.flash * 0.75})`;
+              ctx.fill();
+            }
+          }
+        }
+
+        for (let i = 0; i < this.ripples.length; i++) {
+          const rp = this.ripples[i];
+          ctx.beginPath();
+          ctx.arc(rp.x, rp.y, rp.r, 0, Math.PI * 2);
+          ctx.strokeStyle = `rgba(245, 197, 66, ${rp.alpha * 0.65})`;
+          ctx.lineWidth = 1.2;
+          ctx.stroke();
+        }
+
+        this.renderBuckets(ctx);
+
+        const spriteSize = this.ballRadius * 3.4;
+        const halfSprite = spriteSize * 0.5;
+        for (let i = 0; i < this.balls.length; i++) {
+          const b = this.balls[i];
+          const tLen = b.trail.length;
+          if (tLen > 1) {
+            for (let t = 0; t < tLen - 1; t++) {
+              const pt = b.trail[t];
+              const ratio = (t + 1) / tLen;
+              ctx.beginPath();
+              ctx.arc(pt.x, pt.y, this.ballRadius * ratio * 0.75, 0, Math.PI * 2);
+              ctx.fillStyle = b.isFreeBet
+                ? `rgba(52, 211, 153, ${ratio * 0.28})`
+                : `rgba(245, 197, 66, ${ratio * 0.25})`;
+              ctx.fill();
+            }
+          }
+          const sprite = b.isFreeBet ? this.freeBallSprite : this.normalBallSprite;
+          ctx.drawImage(sprite, b.x - halfSprite, b.y - halfSprite, spriteSize, spriteSize);
+        }
+
+        for (let i = 0; i < this.particles.length; i++) {
+          const p = this.particles[i];
+          ctx.globalAlpha = Math.max(0, p.alpha);
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        for (let i = 0; i < this.floatTexts.length; i++) {
+          const ft = this.floatTexts[i];
+          ctx.globalAlpha = Math.max(0, ft.alpha);
+          ctx.font = `800 ${Math.round(11 * ft.scale)}px -apple-system, BlinkMacSystemFont, sans-serif`;
+          ctx.fillStyle = '#070B10';
+          ctx.fillText(ft.text, ft.x + 1, ft.y + 1);
+          ctx.fillStyle = ft.color;
+          ctx.fillText(ft.text, ft.x, ft.y);
+        }
+        ctx.globalAlpha = 1;
+
+        ctx.restore();
+      }
+
+      renderBuckets(ctx) {
+        const mults = RISK_TABLES[state.risk];
+        const lastRow = this.pinsByRow[ROWS - 1];
+        if (!lastRow || !lastRow.length) return;
+        const leftEdge = lastRow[0].x;
+        const gap = Math.max(1.5, this.colSpacing * 0.1);
+        const bw = this.colSpacing - gap;
+        const bh = this.bucketH;
+        const fontSize = Math.max(7.5, Math.min(10.5, bw * 0.44));
+
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = `800 ${fontSize}px -apple-system, BlinkMacSystemFont, sans-serif`;
+
+        for (let i = 0; i < BUCKETS; i++) {
+          const ba = this.bucketAnim[i];
+          const x = leftEdge + i * this.colSpacing + gap * 0.5;
+          const y = this.bucketY + ba.y;
+          const style = getBucketStyle(i);
+
+          const r = Math.min(5, bw * 0.25);
+          drawRoundedRect(ctx, x, y, bw, bh, r);
+          ctx.fillStyle = style.bg;
+          ctx.fill();
+
+          if (ba.flash > 0.02) {
+            ctx.fillStyle = `rgba(255, 255, 255, ${ba.flash * 0.55})`;
+            ctx.fill();
+          }
+
+          ctx.strokeStyle = style.border;
+          ctx.lineWidth = 0.8;
+          ctx.stroke();
+
+          const m = mults[i];
+          const label = m >= 1000 ? '1K' : String(m);
+          ctx.fillStyle = style.text;
+          ctx.fillText(label, x + bw * 0.5, y + bh * 0.52);
+        }
+      }
+    }
+
+    /* ==========================================================================
+       7. UI CONTROLLERS, FREE BETS, QUESTS, BONUS & FX
+       ========================================================================== */
+    let engine = null;
+
+    function showToast(text, icon = '✨') {
+      const container = document.getElementById('toast-container');
+      const el = document.createElement('div');
+      el.className = 'toast-item';
+      el.innerHTML = `<span>${icon}</span><span>${escapeHtml(text)}</span>`;
+      container.appendChild(el);
+
+      if (typeof gsap !== 'undefined') {
+        gsap.fromTo(el, { y: -16, opacity: 0, scale: 0.94 }, { y: 0, opacity: 1, scale: 1, duration: 0.28, ease: 'back.out(1.6)' });
+        setTimeout(() => {
+          gsap.to(el, { y: -12, opacity: 0, duration: 0.25, onComplete: () => el.remove() });
+        }, 2600);
+      } else {
+        setTimeout(() => el.remove(), 2600);
+      }
+    }
+
+    function triggerJackpotFX(mult) {
+      const vig = document.getElementById('jackpot-vignette');
+      if (typeof gsap !== 'undefined') {
+        gsap.killTweensOf(vig);
+        gsap.fromTo(vig, { opacity: 0.9 }, { opacity: 0, duration: 0.7, ease: 'power2.out' });
+      }
+
+      if (typeof confetti === 'function') {
+        try {
+          confetti({
+            particleCount: mult >= 100 ? 75 : 35,
+            spread: mult >= 100 ? 80 : 55,
+            origin: { y: 0.68 },
+            colors: ['#FCE38A', '#F5C542', '#10B981', '#F43F5E'],
+            disableForReducedMotion: true
+          });
+        } catch (_) {}
+      }
+    }
+
+    function animateBalanceTo(target) {
+      const el = document.getElementById('balance-display');
+      if (typeof gsap === 'undefined') {
+        displayedBalance = target;
+        el.textContent = formatMoney(target);
+        return;
+      }
+      if (balanceTween) balanceTween.kill();
+      const obj = { val: displayedBalance };
+      balanceTween = gsap.to(obj, {
+        val: target,
+        duration: 0.35,
+        ease: 'power2.out',
+        onUpdate: () => {
+          displayedBalance = obj.val;
+          el.textContent = formatMoney(displayedBalance);
+        },
+        onComplete: () => {
+          displayedBalance = target;
+          el.textContent = formatMoney(target);
+        }
+      });
+    }
+
+    function updateBonusButtonVisibility() {
+      const btn = document.getElementById('bonus-btn');
+      if (state.balance < 5000) {
+        btn.classList.add('visible');
+      } else {
+        btn.classList.remove('visible');
+      }
+    }
+
+    function pushHistoryChip(mult) {
+      state.history.unshift(mult);
+      if (state.history.length > 8) state.history.pop();
+      renderHistoryChips(true);
+    }
+
+    function renderHistoryChips(animateFirst = false) {
+      const wrap = document.getElementById('history-chips');
+      wrap.innerHTML = state.history.map(m => {
+        const bg = m >= 10 ? '#E11D48' : m >= 2 ? '#D97706' : m >= 1 ? '#0F766E' : 'rgba(255,255,255,0.08)';
+        const col = m >= 1 ? '#FFFFFF' : '#94A3B8';
+        return `<span class="hist-chip tabular" style="background:${bg};color:${col};">${m}×</span>`;
+      }).join('');
+      if (animateFirst && wrap.firstElementChild && typeof gsap !== 'undefined') {
+        gsap.fromTo(wrap.firstElementChild, { scale: 0.5, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.25, ease: 'back.out(2)' });
+      }
+    }
+
+    /* Управление билетами (Фри-ставками) */
+    function getAvailableTicketNominals() {
+      return Object.keys(state.tickets)
+        .map(Number)
+        .filter(n => (state.tickets[n] || 0) > 0)
+        .sort((a, b) => b - a);
+    }
+
+    function ensureValidFreeBetState() {
+      const nominals = getAvailableTicketNominals();
+      if (nominals.length === 0) {
+        state.freeBetMode = false;
+        state.activeTicketNominal = null;
+      } else if (!state.activeTicketNominal || !(state.tickets[state.activeTicketNominal] > 0)) {
+        state.activeTicketNominal = nominals[0];
+      }
+    }
+
+    function updateFreeBetUI() {
+      ensureValidFreeBetState();
+      const btn = document.getElementById('freebet-toggle');
+      const label = document.getElementById('freebet-label');
+      const betRow = document.getElementById('bet-row');
+      const nominals = getAvailableTicketNominals();
+
+      if (nominals.length === 0) {
+        btn.classList.remove('visible', 'active');
+        betRow.classList.remove('disabled');
+        return;
+      }
+
+      const nom = state.activeTicketNominal;
+      const cnt = state.tickets[nom] || 0;
+      btn.classList.add('visible');
+      btn.classList.toggle('active', state.freeBetMode);
+      label.textContent = `$${formatCompact(nom)} × ${cnt}`;
+      betRow.classList.toggle('disabled', state.freeBetMode);
+    }
+
+    function updateDropButtonState() {
+      const btn = document.getElementById('drop-btn');
+      const title = document.getElementById('drop-btn-title');
+      const sub = document.getElementById('drop-btn-total');
+
+      if (state.freeBetMode && state.activeTicketNominal && state.tickets[state.activeTicketNominal] > 0) {
+        const nom = state.activeTicketNominal;
+        btn.classList.add('free-mode');
+        btn.classList.remove('insufficient');
+        title.textContent = '🎟️ ФРИ-СТАВКА';
+        sub.textContent = `$${formatMoney(nom)} ($0)`;
+      } else {
+        btn.classList.remove('free-mode');
+        const total = state.betPerBall * state.ballCount;
+        const canAfford = state.balance >= total && state.betPerBall >= 5;
+        btn.classList.toggle('insufficient', !canAfford);
+        title.textContent = canAfford ? 'СБРОСИТЬ' : 'НЕДОСТАТОЧНО';
+        sub.textContent = `$${formatMoney(total)}`;
+      }
+    }
+
+    function updateBallsUI() {
+      document.getElementById('balls-slider').value = state.ballCount;
+      document.getElementById('balls-count-label').textContent = pluralBalls(state.ballCount);
+      document.querySelectorAll('#balls-presets .preset-chip').forEach(ch => {
+        ch.classList.toggle('active', Number(ch.dataset.balls) === state.ballCount);
+      });
+      updateDropButtonState();
+    }
+
+    function updateRiskUI() {
+      document.querySelectorAll('#risk-segmented .risk-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.risk === state.risk);
+      });
+    }
+
+    function updateSoundIcon() {
+      const svg = document.getElementById('sound-icon-svg');
+      if (state.soundMode === 'mute') {
+        svg.innerHTML = `
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+          <line x1="23" y1="9" x2="17" y2="15"></line>
+          <line x1="17" y1="9" x2="23" y2="15"></line>`;
+        svg.style.color = '#64748B';
+      } else if (state.soundMode === 'sfx') {
+        svg.innerHTML = `
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+          <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>`;
+        svg.style.color = '#34D399';
+      } else {
+        svg.innerHTML = `
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+          <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+          <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>`;
+        svg.style.color = '#FCE38A';
+      }
+    }
+
+    /* ==========================================================================
+       8. QUESTS SYSTEM & REWARD CLAIMING
+       ========================================================================== */
+    function getClaimableQuestsCount() {
+      let cnt = 0;
+      for (const q of QUEST_DEFINITIONS) {
+        if (!state.claimedQuests[q.id] && q.getProgress(state) >= q.target) {
+          cnt++;
+        }
+      }
+      return cnt;
+    }
+
+    function checkQuestNotifications() {
+      let newlyCompleted = 0;
+      for (const q of QUEST_DEFINITIONS) {
+        if (!state.claimedQuests[q.id] && q.getProgress(state) >= q.target) {
+          if (!state.notifiedQuests[q.id]) {
+            state.notifiedQuests[q.id] = true;
+            newlyCompleted++;
+            showToast(`Задание «${q.title}» выполнено! Заберите награду`, '🏆');
+            Haptic.success();
+          }
+        }
+      }
+      updateQuestBadge();
+      if (newlyCompleted > 0) saveState();
+    }
+
+    function updateQuestBadge() {
+      const cnt = getClaimableQuestsCount();
+      const badge = document.getElementById('quest-badge');
+      const btn = document.getElementById('quests-btn');
+      badge.textContent = cnt;
+      badge.classList.toggle('visible', cnt > 0);
+      btn.classList.toggle('has-alert', cnt > 0);
+    }
+
+    function renderQuestsModal() {
+      const list = document.getElementById('quests-list');
+      const tBar = document.getElementById('quests-tickets-bar');
+      const tList = document.getElementById('quests-tickets-list');
+
+      const nominals = getAvailableTicketNominals();
+      if (nominals.length > 0) {
+        tBar.style.display = 'flex';
+        tList.textContent = nominals.map(n => `$${formatCompact(n)} × ${state.tickets[n]}`).join(' · ');
+      } else {
+        tBar.style.display = 'none';
+      }
+
+      list.innerHTML = QUEST_DEFINITIONS.map(q => {
+        const cur = q.getProgress(state);
+        const pct = Math.min(100, (cur / q.target) * 100);
+        const claimed = Boolean(state.claimedQuests[q.id]);
+        const ready = !claimed && cur >= q.target;
+
+        return `
+          <div class="quest-card ${ready ? 'ready' : ''} ${claimed ? 'claimed' : ''}">
+            <div class="quest-top">
+              <div>
+                <div class="quest-name">${q.title}</div>
+                <div class="quest-desc">${q.desc}</div>
+              </div>
+              <div class="quest-reward-tag">${q.rewardLabel}</div>
+            </div>
+            <div class="quest-progress-row">
+              <div class="quest-bar-bg">
+                <div class="quest-bar-fill" style="width:${pct.toFixed(1)}%;"></div>
+              </div>
+              <div class="quest-pct tabular">${q.formatVal(Math.min(cur, q.target))} / ${q.formatVal(q.target)}</div>
+            </div>
+            ${ready
+              ? `<button type="button" class="quest-claim-btn" data-claim-quest="${q.id}">Забрать награду</button>`
+              : claimed
+                ? `<div class="quest-status-pill">✓ Выполнено</div>`
+                : ''
+            }
+          </div>`;
+      }).join('');
+    }
+
+    function claimQuestReward(questId) {
+      const q = QUEST_DEFINITIONS.find(x => x.id === questId);
+      if (!q || state.claimedQuests[questId] || q.getProgress(state) < q.target) return;
+
+      state.claimedQuests[questId] = true;
+      if (q.reward.type === 'cash') {
+        state.balance += q.reward.amount;
+        animateBalanceTo(state.balance);
+        showToast(`Начислено +$${formatMoney(q.reward.amount)}!`, '💰');
+      } else if (q.reward.type === 'tickets') {
+        const nom = q.reward.nominal;
+        state.tickets[nom] = (state.tickets[nom] || 0) + q.reward.count;
+        state.activeTicketNominal = nom;
+        showToast(`Получено ${q.reward.count} фри-ставок по $${formatCompact(nom)}!`, '🎟️');
+      }
+
+      audio.playCoinBonus();
+      Haptic.success();
+      if (typeof confetti === 'function') {
+        try {
+          confetti({ particleCount: 55, spread: 70, origin: { y: 0.6 }, colors: ['#FCE38A', '#F5C542', '#10B981'] });
+        } catch (_) {}
+      }
+
+      updateBonusButtonVisibility();
+      updateFreeBetUI();
+      updateDropButtonState();
+      updateQuestBadge();
+      renderQuestsModal();
+      saveState();
+    }
+
+    /* ==========================================================================
+       9. MODALS ANIMATION (GSAP BOTTOM-SHEET WITH FALLBACK)
+       ========================================================================== */
+    function openModal(modalId) {
+      const backdrop = document.getElementById(modalId);
+      const sheet = backdrop.querySelector('.bottom-sheet');
+      backdrop.classList.add('open');
+      if (typeof gsap !== 'undefined') {
+        gsap.killTweensOf([backdrop, sheet]);
+        gsap.to(backdrop, { opacity: 1, duration: 0.22 });
+        gsap.to(sheet, { y: '0%', duration: 0.3, ease: 'power3.out' });
+      } else {
+        backdrop.style.opacity = '1';
+        sheet.style.transform = 'translateY(0%)';
+      }
+    }
+
+    function closeModal(modalId) {
+      const backdrop = document.getElementById(modalId);
+      const sheet = backdrop.querySelector('.bottom-sheet');
+      if (typeof gsap !== 'undefined') {
+        gsap.killTweensOf([backdrop, sheet]);
+        gsap.to(sheet, { y: '100%', duration: 0.22, ease: 'power2.in' });
+        gsap.to(backdrop, {
+          opacity: 0, duration: 0.22,
+          onComplete: () => backdrop.classList.remove('open')
+        });
+      } else {
+        backdrop.style.opacity = '0';
+        sheet.style.transform = 'translateY(100%)';
+        backdrop.classList.remove('open');
+      }
+    }
+
+    /* ==========================================================================
+       10. PROFILE RENDERING & FULL UI SYNC
+       ========================================================================== */
+    function initProfileUI() {
+      const nameEl = document.getElementById('user-name');
+      const avatarWrap = document.getElementById('user-avatar-wrap');
+      const fallback = document.getElementById('user-avatar-fallback');
+
+      if (tgUser) {
+        const displayName = tgUser.first_name
+          ? (tgUser.last_name ? `${tgUser.first_name} ${tgUser.last_name}` : tgUser.first_name)
+          : (tgUser.username ? `@${tgUser.username}` : `Игрок #${tgUser.id}`);
+        nameEl.textContent = displayName;
+        const initials = displayName.replace(/^@/, '').trim().slice(0, 2).toUpperCase() || 'VIP';
+        fallback.textContent = initials;
+
+        if (tgUser.photo_url) {
+          const img = document.createElement('img');
+          img.className = 'avatar-img';
+          img.src = tgUser.photo_url;
+          img.alt = '';
+          img.onerror = () => {
+            avatarWrap.innerHTML = '';
+            avatarWrap.appendChild(fallback);
+          };
+          avatarWrap.innerHTML = '';
+          avatarWrap.appendChild(img);
+        }
+      } else {
+        nameEl.textContent = 'Гость';
+        fallback.textContent = 'Г';
+      }
+    }
+
+    function syncAllUI() {
+      document.getElementById('balance-display').textContent = formatMoney(state.balance);
+      document.getElementById('bet-input').value = state.betPerBall;
+      updateBonusButtonVisibility();
+      updateRiskUI();
+      updateBallsUI();
+      updateFreeBetUI();
+      updateDropButtonState();
+      updateQuestBadge();
+      updateSoundIcon();
+      renderHistoryChips(false);
+    }
+
+    /* ==========================================================================
+       11. EVENT LISTENERS & BOOTSTRAP
+       ========================================================================== */
+    function bindEvents() {
+      // Разблокировка Web Audio API при первом касании
+      const unlockOnce = () => {
+        audio.unlock();
+        window.removeEventListener('pointerdown', unlockOnce);
+        window.removeEventListener('touchstart', unlockOnce);
+      };
+      window.addEventListener('pointerdown', unlockOnce, { passive: true });
+      window.addEventListener('touchstart', unlockOnce, { passive: true });
+
+      // Переключение риска
+      document.getElementById('risk-segmented').addEventListener('click', e => {
+        const btn = e.target.closest('.risk-btn');
+        if (!btn) return;
+        audio.playClick();
+        Haptic.light();
+        state.risk = btn.dataset.risk;
+        updateRiskUI();
+        saveState();
+      });
+
+      // Переключатель фри-ставки (циклический выбор номинала / вкл-выкл)
+      document.getElementById('freebet-toggle').addEventListener('click', () => {
+        audio.playClick();
+        Haptic.light();
+        const nominals = getAvailableTicketNominals();
+        if (!nominals.length) return;
+
+        if (!state.freeBetMode) {
+          state.freeBetMode = true;
+          state.activeTicketNominal = nominals[0];
+        } else {
+          const idx = nominals.indexOf(state.activeTicketNominal);
+          if (idx >= 0 && idx < nominals.length - 1) {
+            state.activeTicketNominal = nominals[idx + 1];
+          } else {
+            state.freeBetMode = false;
+          }
+        }
+        updateFreeBetUI();
+        updateDropButtonState();
+        saveState();
+      });
+
+      // Поле ввода ставки ($5 - безлимит)
+      const betInput = document.getElementById('bet-input');
+      betInput.addEventListener('focus', () => {
+        window.scrollTo(0, 0);
+      });
+      betInput.addEventListener('input', () => {
+        const v = Math.floor(Number(betInput.value) || 0);
+        state.betPerBall = Math.max(0, v);
+        updateDropButtonState();
+      });
+      betInput.addEventListener('blur', () => {
+        if (state.betPerBall < 5) state.betPerBall = 5;
+        betInput.value = state.betPerBall;
+        updateDropButtonState();
+        saveState();
+        setTimeout(() => window.scrollTo(0, 0), 50);
+      });
+
+      // Быстрые кнопки ставки (Min, ½, 2×, Max — без верхнего потолка)
+      document.querySelectorAll('.quick-bet-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          if (state.freeBetMode) return;
+          audio.playClick();
+          Haptic.light();
+          const act = btn.dataset.betAct;
+          if (act === 'min') {
+            state.betPerBall = 5;
+          } else if (act === 'half') {
+            state.betPerBall = Math.max(5, Math.floor(state.betPerBall / 2));
+          } else if (act === 'double') {
+            state.betPerBall = Math.max(5, state.betPerBall * 2);
+          } else if (act === 'max') {
+            state.betPerBall = Math.max(5, Math.floor(state.balance / state.ballCount));
+          }
+          betInput.value = state.betPerBall;
+          updateDropButtonState();
+          saveState();
+        });
+      });
+
+      // Выбор количества шариков (1 - 100)
+      const slider = document.getElementById('balls-slider');
+      slider.addEventListener('input', () => {
+        state.ballCount = Math.max(1, Math.min(100, Number(slider.value) || 1));
+        updateBallsUI();
+      });
+      slider.addEventListener('change', () => saveState());
+
+      document.getElementById('balls-minus').addEventListener('click', () => {
+        audio.playClick();
+        Haptic.light();
+        state.ballCount = Math.max(1, state.ballCount - 1);
+        updateBallsUI();
+        saveState();
+      });
+
+      document.getElementById('balls-plus').addEventListener('click', () => {
+        audio.playClick();
+        Haptic.light();
+        state.ballCount = Math.min(100, state.ballCount + 1);
+        updateBallsUI();
+        saveState();
+      });
+
+      document.getElementById('balls-presets').addEventListener('click', e => {
+        const chip = e.target.closest('.preset-chip');
+        if (!chip) return;
+        audio.playClick();
+        Haptic.light();
+        state.ballCount = Number(chip.dataset.balls);
+        updateBallsUI();
+        saveState();
+      });
+
+      // Главная кнопка запуска шариков
+      document.getElementById('drop-btn').addEventListener('click', () => {
+        audio.unlock();
+        if (document.activeElement === betInput) betInput.blur();
+
+        const count = state.ballCount;
+        const isFree = Boolean(
+          state.freeBetMode &&
+          state.activeTicketNominal &&
+          (state.tickets[state.activeTicketNominal] || 0) > 0
+        );
+
+        let betPerBall = 0;
+
+        if (isFree) {
+          const nominal = state.activeTicketNominal;
+          state.tickets[nominal] = Math.max(0, (state.tickets[nominal] || 0) - 1);
+          if (state.tickets[nominal] === 0) delete state.tickets[nominal];
+          betPerBall = nominal / count;
+          ensureValidFreeBetState();
+        } else {
+          if (state.betPerBall < 5) {
+            state.betPerBall = 5;
+            betInput.value = 5;
+          }
+          const totalCost = state.betPerBall * count;
+          if (state.balance < totalCost) {
+            showToast('Недостаточно средств на балансе', '⚠️');
+            Haptic.light();
+            return;
+          }
+          state.balance -= totalCost;
+          state.stats.totalWagered += totalCost;
+          betPerBall = state.betPerBall;
+        }
+
+        state.stats.roundsCount += 1;
+        if (count > state.stats.maxBallsInRound) {
+          state.stats.maxBallsInRound = count;
+        }
+
+        audio.playDrop(count);
+        Haptic.medium();
+
+        engine.launchRound({
+          count,
+          betPerBall,
+          risk: state.risk,
+          isFreeBet: isFree
+        });
+
+        animateBalanceTo(state.balance);
+        updateBonusButtonVisibility();
+        updateFreeBetUI();
+        updateDropButtonState();
+        checkQuestNotifications();
+        saveState();
+      });
+
+      // Кнопка бонусного пополнения +20K (строго при балансе < $5,000)
+      document.getElementById('bonus-btn').addEventListener('click', () => {
+        if (state.balance >= 5000) return;
+        audio.unlock();
+        state.balance += 20000;
+        audio.playCoinBonus();
+        Haptic.success();
+        animateBalanceTo(state.balance);
+        updateBonusButtonVisibility();
+        updateDropButtonState();
+        showToast('Бонус +$20,000 зачислен на баланс!', '🎁');
+        if (typeof confetti === 'function') {
+          try {
+            confetti({ particleCount: 45, spread: 60, origin: { y: 0.25 }, colors: ['#FCE38A', '#10B981', '#F5C542'] });
+          } catch (_) {}
+        }
+        saveState();
+      });
+
+      // Кнопка заданий
+      document.getElementById('quests-btn').addEventListener('click', () => {
+        audio.playClick();
+        Haptic.light();
+        renderQuestsModal();
+        openModal('quests-modal');
+      });
+
+      // Забор награды за задание
+      document.getElementById('quests-list').addEventListener('click', e => {
+        const btn = e.target.closest('[data-claim-quest]');
+        if (!btn) return;
+        claimQuestReward(btn.dataset.claimQuest);
+      });
+
+      // Переключатель звука (all -> sfx -> mute)
+      document.getElementById('sound-btn').addEventListener('click', () => {
+        audio.unlock();
+        Haptic.light();
+        const order = ['all', 'sfx', 'mute'];
+        const nextIdx = (order.indexOf(state.soundMode) + 1) % order.length;
+        state.soundMode = order[nextIdx];
+        audio.setMode(state.soundMode);
+        updateSoundIcon();
+        const labels = { all: 'Звук и музыка вкл.', sfx: 'Только эффекты', mute: 'Звук выкл.' };
+        showToast(labels[state.soundMode], state.soundMode === 'mute' ? '🔇' : '🔊');
+        saveState();
+      });
+
+      // Открытие окна реальных игроков
+      document.getElementById('online-trigger').addEventListener('click', () => {
+        audio.playClick();
+        Haptic.light();
+        OnlineService.renderModalList();
+        openModal('online-modal');
+      });
+
+      // Вкладки окна онлайн-игроков
+      document.getElementById('online-tabs').addEventListener('click', e => {
+        const tab = e.target.closest('.modal-tab');
+        if (!tab) return;
+        audio.playClick();
+        Haptic.light();
+        OnlineService.activeTab = tab.dataset.otab;
+        document.querySelectorAll('#online-tabs .modal-tab').forEach(t => {
+          t.classList.toggle('active', t === tab);
+        });
+        OnlineService.renderModalList();
+      });
+
+      // Закрытие модалок по крестику и клику по фону
+      document.querySelectorAll('[data-close-modal]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          audio.playClick();
+          closeModal(btn.dataset.closeModal);
+        });
+      });
+
+      document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
+        backdrop.addEventListener('click', e => {
+          if (e.target === backdrop) {
+            closeModal(backdrop.id);
+          }
+        });
+      });
+
+      // Ресайз и жизненный цикл вкладки
+      window.addEventListener('resize', () => {
+        if (engine) engine.resize();
+      });
+
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+          audio.pauseBgm();
+          if (engine) engine.stop();
+          saveState();
+        } else {
+          audio.resumeBgm();
+          if (engine) engine.start();
+        }
+      });
+
+      const settleOnExit = () => {
+        if (engine) engine.settleAllPendingImmediately();
+      };
+      window.addEventListener('pagehide', settleOnExit);
+      window.addEventListener('beforeunload', settleOnExit);
+    }
+
+    /* ==========================================================================
+       12. APPLICATION STARTUP (WINDOW ONLOAD)
+       ========================================================================== */
+    window.onload = function () {
+      initTelegram();
+      lockBrowserGestures();
+      loadState();
+      initProfileUI();
+      syncAllUI();
+      OnlineService.init();
+
+      const canvas = document.getElementById('plinko-canvas');
+      engine = new PlinkoEngine(canvas);
+      bindEvents();
+      engine.start();
+
+      // Анимация прелоадера (0.9 сек)
+      const splash = document.getElementById('splash-screen');
+      const fill = document.getElementById('splash-fill');
+      if (typeof gsap !== 'undefined') {
+        gsap.to(fill, {
+          width: '100%',
+          duration: 0.75,
+          ease: 'power2.inOut',
+          onComplete: () => {
+            gsap.to(splash, {
+              opacity: 0,
+              duration: 0.35,
+              ease: 'power2.out',
+              onComplete: () => { splash.style.display = 'none'; }
+            });
+          }
+        });
+      } else {
+        fill.style.width = '100%';
+        setTimeout(() => { splash.style.display = 'none'; }, 500);
+      }
+    };
+  </script>
+</body>
+</html>
